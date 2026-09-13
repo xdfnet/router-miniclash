@@ -28,7 +28,6 @@ config core 'core'
 
 ```bash
 ./scripts/airport-switch.sh boostnet   # 切回 BoostNet（主力）
-./scripts/airport-switch.sh dongfang   # 切到东方互联（备用）
 ```
 
 ## 部署
@@ -40,7 +39,7 @@ config core 'core'
 ./scripts/airport-switch.sh # 一键切换机场（配置在 airports/<机场名>.conf）
 ```
 
-机场信息留档在 `airports/` 目录（`boostnet.conf` / `dongfang.conf`，含订阅地址 + 候选 + 备注），切换：`./scripts/airport-switch.sh <机场名>`（不带参数列出可用机场）。
+机场信息留档在 `airports/` 目录（`boostnet.conf`，含订阅地址 + 候选 + 备注），切换：`./scripts/airport-switch.sh <机场名>`（不带参数列出可用机场）。
 
 订阅地址 / 候选 / 默认节点已写死在 config 里，无需手工填。首次安装后直接启用（模板已 `enabled=1`）：
 
@@ -64,7 +63,7 @@ config core 'core'
 - 看状态：`/etc/init.d/miniclash status`
 - 看当前节点：`uci get miniclash.core.node`（watchdog 每周期自动更新）
 - 更新订阅：`uci set miniclash.core.force_update='1' && uci commit miniclash && /etc/init.d/miniclash restart`
-- 切换机场：`./scripts/airport-switch.sh <机场名>`（`boostnet` / `dongfang`，配置在 `airports/`）
+- 切换机场：`./scripts/airport-switch.sh <机场名>`（`boostnet`，配置在 `airports/`）
 - 自动选优：主组「自动优选」是 fallback 组——`nodes` 第 1 个为**默认节点**（可达即锁定，稳定优先），其余为**备用候选**（url-test 自动选优，tolerance 500ms 防抖动），默认节点劣化才切备用。`node` 由 watchdog 上报记录当前实际节点。想固定某节点：把 `nodes` 只留它，重启
 
 ## 怎么工作
@@ -108,7 +107,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 - **Apple 全家**：订阅的 `apple.com,DIRECT` / `icloud.com,DIRECT` 把 Apple 服务兜成直连而本网络连不上 Apple（APNs/TestFlight/iCloud/配置服务均超时），故注入 `DOMAIN-SUFFIX,apple.com,自动优选` + `DOMAIN-SUFFIX,icloud.com,自动优选` 整体走代理。
 - **微软服务**：订阅把 `microsoft.com / microsoftonline.com / office.com / office365.com / live.com / officecdn` 兜成 DIRECT，本网络直连同样超时，故注入这些域名 → 自动优选（与 Apple 同一注入机制）。
 - **国内强制直连**：hf-mirror.com 服务器在东京（SAKURA）、xiaohongshu.com 部分海外 CDN、sun-clan.com，本网络可直连却被 GEOIP 兜进代理，故注入 `DOMAIN-SUFFIX,hf-mirror.com,DIRECT` + `DOMAIN-KEYWORD,xiaohongshu,DIRECT` + `DOMAIN-SUFFIX,sun-clan.com,DIRECT` 强制直连（同一注入机制）。
-- **TLS 指纹**：gen_config 对 proxies 段**无 `client-fingerprint` 的 flow 节点**统一注入 `firefox`（跳过 proxy-groups、跳过已有指纹节点）。mihomo 默认指纹的 ClientHello 超 MSS，路由器 GSO 合并大包被中间设备丢前段 → 握手超时（2026-09-01 BoostNet 全部节点 `i/o timeout` 根因）；firefox 指纹包小、单段不分片不受影响（东方互联一直正常正是自带 firefox 指纹）。
+- **TLS 指纹**：gen_config 对 proxies 段**无 `client-fingerprint` 的 flow 节点**统一注入 `firefox`（跳过 proxy-groups、跳过已有指纹节点）。mihomo 默认指纹的 ClientHello 超 MSS，路由器 GSO 合并大包被中间设备丢前段 → 握手超时（2026-09-01 BoostNet 全部节点 `i/o timeout` 根因）；firefox 指纹包小、单段不分片不受影响。
 
 > 注入的域名都是规则条目，缩进跟随订阅自动适配（旧订阅 4 空格、新订阅 2 空格），缩进不一致会吞掉后续规则破坏 YAML。
 
@@ -134,3 +133,9 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 - [x] 内核 + GeoIP 库内置，update-kernel.sh 一条命令更新（含 MD5 校验防损坏），F2FS 丢文件 `install.sh` 恢复
 - [x] 真机验证：google / youtube / github 通，大陆直连
 - [ ] UDP（TPROXY）— 暂不做，TCP 够日常使用
+
+## 相关文档
+
+- [新增机场](docs/add-airport.md) — 配置文件格式、字段约束、切换与验证步骤
+- [架构说明](docs/architecture.md) — 目录结构、运行时文件、调用链路
+- [mihomo 指南](docs/mihomo-guide.md) — 内核各能力的使用与设计取舍

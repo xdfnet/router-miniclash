@@ -47,7 +47,6 @@ scripts/update-kernel.sh       更新内置内核 + GeoIP（--deploy 同步并�
 scripts/uninstall.sh           彻底卸载
 scripts/airport-switch.sh      一键切换机场（读 airports/<机场名>.conf → 写 UCI → 重启）
 airports/boostnet.conf         BoostNet 机场信息（订阅 URL + 候选 + 备注）
-airports/dongfang.conf         东方互联机场信息（备用）
 
 运行时（路由器上，非仓库）:
 /etc/miniclash/config.yaml     生成的 mihomo 配置
