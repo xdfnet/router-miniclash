@@ -150,24 +150,9 @@ gen_config() {
             # 单节点时退化为纯 fallback（即固定该节点）
             auto_group="$fallback_group"
         fi
-        # 信息伪装节点 name 列表（订阅源在 YAML 头塞的伪节点：剩余流量/到期日/官网）
-        # 用 awk 变量传入：BusyBox awk = BWK BRE，`|` `()` 在 regex 里是字面，所以走 4 次字面 gsub（避免正则兼容坑）
-        FAKE_1="剩余流量：0"
-        FAKE_2="'距离下次重置剩余：1 天'"
-        FAKE_3="套餐到期：2027-01-13"
-        FAKE_4="'永久官网:666.boostqz.com'"
-        awk -v extra="$EXTRA" -v auto="$auto_group" -v f1="$FAKE_1" -v f2="$FAKE_2" -v f3="$FAKE_3" -v f4="$FAKE_4" '
+        awk -v extra="$EXTRA" -v auto="$auto_group" '
             /^proxies:/{p=1}
             /^proxy-groups:/{pg=1}
-            # 丢弃订阅源在 YAML 头塞的信息伪装节点（剩余流量/到期日/官网，全指向订阅伪装端口）
-            # 判定：name 关键字 OR 端口 40200（真节点范围 40201-40255 + 40301-40302）；避免污染订阅自带组 all 列表
-            p && !pg && /^ *- \{/ && (/name:.*(剩余流量|距离下次重置|套餐到期|永久官网)/ || /port: 40200[, }]/) { next }
-            # 同步删除 proxy-groups 段 all 列表对 4 个伪节点的引用（防 mihomo 启动报 not found）
-            # 处理 3 种位置：中间 ", 名字,"；开头 "[名字,"（订阅 url-test/fallback 组以剩余流量：0 开头）；结尾 ", 名字]"
-            pg {
-                gsub(", " f1 ",", ","); gsub(", " f2 ",", ","); gsub(", " f3 ",", ","); gsub(", " f4 ",", ",")
-                gsub("\\[" f1 "[, ]*", "["); gsub("\\[" f2 "[, ]*", "["); gsub("\\[" f3 "[, ]*", "["); gsub("\\[" f4 "[, ]*", "[")
-            }
             # 注入 TLS 指纹：flow 节点缺 fingerprint 统一补 firefox
             # （mihomo 默认指纹 ClientHello 超 MSS 触发 GSO 大包，中间设备丢前段 → 2026-09-01 BoostNet SACK 丢段根因；firefox 指纹包小不分片）
             p && !pg && /^ *- \{/ && $0 !~ /client-fingerprint/ { sub(/ *\}$/, ", client-fingerprint: firefox }") }
@@ -176,9 +161,6 @@ gen_config() {
                 if (auto != "" && $0 ~ /^proxy-groups:/) {
                     print
                     getline nxt
-                    # 同步删除 proxy-groups 段首行（被 getline 后被 next 跳过主循环 pg gsub）对 4 个伪节点的引用
-                    gsub(", " f1 ",", ",", nxt); gsub(", " f2 ",", ",", nxt); gsub(", " f3 ",", ",", nxt); gsub(", " f4 ",", ",", nxt)
-                    gsub("\\[" f1 "[, ]*", "[", nxt); gsub("\\[" f2 "[, ]*", "[", nxt); gsub("\\[" f3 "[, ]*", "[", nxt); gsub("\\[" f4 "[, ]*", "[", nxt)
                     match(nxt, /^ */); ind = RLENGTH
                     n = split(auto, gs, "\n")
                     for (i = 1; i <= n; i++) {
