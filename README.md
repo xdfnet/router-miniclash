@@ -102,8 +102,9 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 **⑤ 订阅 YAML 直通**
 `proxies:` 起的部分原样交给内核：45 个 anytls 节点、proxy-groups（BoostNet / 自动选择 / 故障转移）、rules（含 `GEOIP,CN,DIRECT` 大陆直连）全部由内核原生解析、健康检查（url-test）和分流。MiniClash 只覆盖端口 / DNS / API 三块头部，不翻译任何协议。
 
-五处例外：
+六处例外：
 - **自动优选组**：init.d 在 proxy-groups 段注入 `{ name: 自动优选, type: fallback, proxies: [默认节点, '自动优选-备用'], url: 'github.com/generate_204', interval: 60, expected-status: 200/204 }` + `{ name: 自动优选-备用, type: url-test, proxies: [其余候选], url: 'github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }`（默认节点 = `nodes` 第 1 个，可达即锁定；劣化才切备用 url-test 组；expected-status 只认真实 204 防劫持假 200 误判），并把 rules 里所有 `,BoostNet` 引用改为 `,自动优选`。不用订阅自带「自动选择」组：它测 gstatic 会把日本判死，且含香港（Claude 不通）。
+- **信息伪装节点**：订阅源（BoostNet）在 Clash YAML 头部塞了 4 个信息伪装节点（`剩余流量：0` / `距离下次重置剩余：1 天` / `套餐到期：2027-01-13` / `永久官网:666.boostqz.com`），全部指向同一个伪装端口（BoostNet 是 40200），mihomo 会当成真节点写进 proxies 段并污染订阅自带组（BoostNet / 自动选择 / 故障转移）的 all 列表。gen_config **两步清理**：① proxies 段按 name 关键字或端口 40200 整行删除（端口判定对其他机场的伪装节点也通用：伪装端口集中，真节点端口分散）；② proxy-groups 段按 name 字符串在 all 列表里同步删除引用（开头/中间/结尾三个位置都覆盖）。BusyBox awk 是 BRE 不是 ERE，所以规避 `()` `|` `?` 等元字符，走字面 gsub + 转义字符类。
 - **Apple 全家**：订阅的 `apple.com,DIRECT` / `icloud.com,DIRECT` 把 Apple 服务兜成直连而本网络连不上 Apple（APNs/TestFlight/iCloud/配置服务均超时），故注入 `DOMAIN-SUFFIX,apple.com,自动优选` + `DOMAIN-SUFFIX,icloud.com,自动优选` 整体走代理。
 - **微软服务**：订阅把 `microsoft.com / microsoftonline.com / office.com / office365.com / live.com / officecdn` 兜成 DIRECT，本网络直连同样超时，故注入这些域名 → 自动优选（与 Apple 同一注入机制）。
 - **国内强制直连**：hf-mirror.com 服务器在东京（SAKURA）、xiaohongshu.com 部分海外 CDN、sun-clan.com，本网络可直连却被 GEOIP 兜进代理，故注入 `DOMAIN-SUFFIX,hf-mirror.com,DIRECT` + `DOMAIN-KEYWORD,xiaohongshu,DIRECT` + `DOMAIN-SUFFIX,sun-clan.com,DIRECT` 强制直连（同一注入机制）。
