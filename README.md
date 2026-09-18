@@ -62,7 +62,7 @@ config core 'core'
 - 启动 / 停止 / 重启：`/etc/init.d/miniclash {start|stop|restart}`
 - 看状态：`/etc/init.d/miniclash status`
 - 看当前节点：`uci get miniclash.core.node`（watchdog 每周期自动更新）
-- 更新订阅：`uci set miniclash.core.force_update='1' && uci commit miniclash && /etc/init.d/miniclash restart`
+- 更新订阅：`uci set miniclash.core.force_update='1' && uci commit miniclash && /etc/init.d/miniclash restart`（force_update 会在订阅下载成功后自动恢复为 0，无需手动回写）
 - 切换机场：`./scripts/airport-switch.sh <机场名>`（`boostnet`，配置在 `airports/`）
 - 自动选优：主组「自动优选」是 fallback 组——`nodes` 第 1 个为**默认节点**（可达即锁定，稳定优先），其余为**备用候选**（url-test 自动选优，tolerance 500ms 防抖动），默认节点劣化才切备用。`node` 由 watchdog 上报记录当前实际节点。想固定某节点：把 `nodes` 只留它，重启
 

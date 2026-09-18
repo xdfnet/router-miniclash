@@ -280,6 +280,12 @@ start() {
     # 首次或订阅文件缺失时更新订阅
     if [ ! -f $SUBSCRIBE ] || [ "$(get force_update)" = "1" ]; then
         subscribe || return 1
+        # 强制刷新成功后自动恢复，避免下次 restart 又重下订阅
+        if [ "$(get force_update)" = "1" ]; then
+            uci set miniclash.core.force_update=0
+            uci commit miniclash
+            log "force_update 已自动恢复为 0"
+        fi
     fi
     gen_config || return 1
 
