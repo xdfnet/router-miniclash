@@ -4,7 +4,8 @@
 set -e
 
 ROUTER="${1:-luyou}"
-URL='https://sub.boost1.shop/d/ffcce85760a36bd44a367cebcb2c97a5'
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+URL=$(cat "$ROOT/subscription.url")
 KEEP='日本|新加坡'
 
 TMP=$(mktemp); trap 'rm -f "$TMP" "$TMP.d" "$TMP.f"' EXIT

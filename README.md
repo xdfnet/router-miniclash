@@ -30,9 +30,10 @@ config core 'core'
 ./scripts/update-kernel.sh  # 更新内置 mihomo 内核 + GeoIP 库（加 --deploy 同步并重启）
 ./scripts/uninstall.sh      # 彻底卸载
 ./scripts/update-subscribe.sh # 本地拉订阅过滤日/新节点后上传（install 自动执行一次）
+./scripts/traffic.sh        # 查看套餐剩余流量 / 重置 / 到期
 ```
 
-订阅地址已写死在 update-subscribe.sh，无需手工填。首次安装后直接启用（模板已 `enabled=1`）：
+订阅地址在项目根 `subscription.url`（一行），改地址只需改这一个文件。首次安装后直接启用（模板已 `enabled=1`）：
 
 ```bash
 /etc/init.d/miniclash enable
@@ -54,6 +55,7 @@ config core 'core'
 - 看状态：`/etc/init.d/miniclash status`
 - 看当前节点：`uci get miniclash.core.node`（watchdog 每周期自动更新）
 - 更新订阅：`./scripts/update-subscribe.sh`（本地拉取 → 过滤日本/新加坡节点 → 上传 → 重启，一条龙）
+- 查套餐：`./scripts/traffic.sh`（剩余流量 / 下次重置 / 套餐到期 / 官网，信息条目藏在订阅里）
 - 日志智能分诊：`./scripts/diagnose.sh`（TypeSafe Jev 判断节点故障 / 故障类型 / 健康度，需 `TYPESAFE_API_KEY` 与 jq；日志自动脱敏后出网）
 - 自动选优：主组「自动优选」是 select 组，成员为新加坡组/日本组两个 url-test 国家组——组内单节点故障内核秒级自愈；整国劣化时 judge.sh 每 5 分钟双探针（GitHub + Google）实测打分，连续 2 次领先 20% 才自动跨国切换，防打地鼠。`node` 由 watchdog 两层展开上报
 
@@ -91,7 +93,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 主组「自动优选」是 **select** 组，成员为每国一个 **url-test** 组（新加坡组/日本组，每 60s 测 GitHub 选组内最优，tolerance 500ms 防抖）——单节点故障组内秒级自愈。国家级劣化由 `/usr/share/miniclash/judge.sh`（cron 每 5 分钟）裁决：对每节点实测 GitHub + Google **双目标**（单探针对半死节点有盲区：探针返 204、业务却 EOF），国家分 = 最快 2 个活节点延迟均值；连续 2 次同一别国领先且当前国慢 20%（当前国不可用直接满足）才经 API `PUT` 切换 select——双确认 + margin 防横跳。watchdog 只做两层展开（select → 国家组 → 节点）把实际节点落盘 `node`，不驱动切换。
 
 **⑤ 订阅本地过滤 + YAML 直通**
-订阅地址只存在于 Mac 的 update-subscribe.sh：本地拉取（base64 自动解码）后过滤 `proxies:` 段，仅保留日本/新加坡 16 个节点（信息伪装条目同步剔除），订阅自带 proxy-groups 段整段删除，再上传路由器。rules（含 `GEOIP,CN,DIRECT` 大陆直连）原样保留，节点与规则由内核原生解析，不翻译任何协议；MiniClash 只覆盖端口 / DNS / API 三块头部。所有规则走「自动优选」。
+订阅地址存在于项目根 `subscription.url`：Mac 本地拉取（base64 自动解码）后过滤 `proxies:` 段，仅保留日本/新加坡 16 个节点（信息伪装条目同步剔除），订阅自带 proxy-groups 段整段删除，再上传路由器。rules（含 `GEOIP,CN,DIRECT` 大陆直连）原样保留，节点与规则由内核原生解析，不翻译任何协议；MiniClash 只覆盖端口 / DNS / API 三块头部。所有规则走「自动优选」。
 
 五处例外：
 - **自动优选组**：init.d 按节点名前缀归集到国家组，在 rules 段前生成 select 主组 + 每国一个 url-test 组（`interval: 60 / tolerance: 500 / expected-status: 200/204`，expected-status 只认真实 204 防劫持假 200 误判），并把 rules 里所有 `,BoostNet` 引用改为 `,自动优选`。不用订阅自带「自动选择」组：它测 gstatic 会把日本判死，且含香港（Claude 不通）。

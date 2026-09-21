@@ -45,7 +45,9 @@ root/usr/share/miniclash/judge.sh 跨国裁决（cron 每 5 分钟，双探针 +
 scripts/install.sh             root/ → 路由器 / 同步（不覆盖 UCI 配置）
 scripts/update-kernel.sh       更新内置内核 + GeoIP（--deploy 同步并重启）
 scripts/uninstall.sh           彻底卸载
-scripts/update-subscribe.sh    本地拉订阅/过滤日+新节点/上传/重启（订阅地址写死在此）
+subscription.url               订阅地址（一行，两个脚本共用）
+scripts/update-subscribe.sh    本地拉订阅/过滤日+新节点/上传/重启
+scripts/traffic.sh             查看套餐剩余流量/重置/到期（信息条目藏在订阅 proxies 段）
 
 运行时（路由器上，非仓库）:
 /etc/miniclash/config.yaml     生成的 mihomo 配置
