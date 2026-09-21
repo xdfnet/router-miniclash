@@ -130,3 +130,4 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 
 - [架构说明](docs/architecture.md) — 目录结构、运行时文件、调用链路
 - [mihomo 指南](docs/mihomo-guide.md) — 内核各能力的使用与设计取舍
+- [事故报告：2026-09-01 拨号失败](docs/incident-2026-09-01-boostnet-dial-failure.md) — TLS 指纹超 MSS + GSO 丢段根因
