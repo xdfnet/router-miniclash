@@ -23,4 +23,7 @@ ssh "$ROUTER" 'ls -lh /usr/share/miniclash/etc/miniclash/Country.mmdb 2>/dev/nul
 echo "==> 清理废弃 LuCI 界面（纯配置方案不再需要界面）"
 ssh "$ROUTER" 'rm -f /usr/lib/lua/luci/controller/miniclash.lua; rm -rf /usr/lib/lua/luci/view/miniclash; rm -f /usr/lib/lua/luci/model/cbi/miniclash.lua; rm -f /tmp/luci-indexcache* 2>/dev/null; rm -rf /tmp/luci-modulecache 2>/dev/null; true'
 
+echo "==> 拉取订阅并启动（本地过滤日本/新加坡节点后上传）"
+"$ROOT/scripts/update-subscribe.sh" "$ROUTER"
+
 echo "==> 安装完成"

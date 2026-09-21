@@ -14,21 +14,14 @@
 ```uci
 config core 'core'
     option enabled '1'                  # 总开关：1 启动，0 停止
-    option url 'https://sub.boost1.shop/…'  # 订阅地址（已写死 BoostNet）
-    option force_update '0'             # 1 时重启强制重新下载订阅
-    option group '自动优选'             # 主代理组名（fallback：默认节点 + 备用 url-test）
-    option node '日本1'                 # 当前实际节点（watchdog 自动更新，仅供查看）
-    option nodes '日本1,日本2,日本3,日本4'  # 自动优选：第 1 个为默认节点，其余为备用候选
+    option group '自动优选'             # 主代理组名（select，国家由 judge 裁决）
+    option node '新加坡1'               # 当前实际节点（watchdog 自动更新，仅供查看）
     option check_interval '60'          # 节点上报间隔（秒）
 ```
 
 改配置 → `uci commit miniclash` → `/etc/init.d/miniclash restart`。
 
-**切换机场**：一条命令（机场信息在 `airports/`，脚本自动写 UCI → 强制拉订阅 → 重启 → 恢复 force_update）：
-
-```bash
-./scripts/airport-switch.sh boostnet   # 切回 BoostNet（主力）
-```
+**订阅更新在本地**：路由器不保存订阅地址，由 Mac 脚本拉取、过滤后上传（见下）。
 
 ## 部署
 
@@ -36,12 +29,10 @@ config core 'core'
 ./scripts/install.sh        # 一键安装到路由器（内置内核+GeoIP库，不覆盖已有配置）
 ./scripts/update-kernel.sh  # 更新内置 mihomo 内核 + GeoIP 库（加 --deploy 同步并重启）
 ./scripts/uninstall.sh      # 彻底卸载
-./scripts/airport-switch.sh # 一键切换机场（配置在 airports/<机场名>.conf）
+./scripts/update-subscribe.sh # 本地拉订阅过滤日/新节点后上传（install 自动执行一次）
 ```
 
-机场信息留档在 `airports/` 目录（`boostnet.conf`，含订阅地址 + 候选 + 备注），切换：`./scripts/airport-switch.sh <机场名>`（不带参数列出可用机场）。
-
-订阅地址 / 候选 / 默认节点已写死在 config 里，无需手工填。首次安装后直接启用（模板已 `enabled=1`）：
+订阅地址已写死在 update-subscribe.sh，无需手工填。首次安装后直接启用（模板已 `enabled=1`）：
 
 ```bash
 /etc/init.d/miniclash enable
@@ -62,10 +53,9 @@ config core 'core'
 - 启动 / 停止 / 重启：`/etc/init.d/miniclash {start|stop|restart}`
 - 看状态：`/etc/init.d/miniclash status`
 - 看当前节点：`uci get miniclash.core.node`（watchdog 每周期自动更新）
-- 更新订阅：`uci set miniclash.core.force_update='1' && uci commit miniclash && /etc/init.d/miniclash restart`（force_update 会在订阅下载成功后自动恢复为 0，无需手动回写）
-- 切换机场：`./scripts/airport-switch.sh <机场名>`（`boostnet`，配置在 `airports/`）
+- 更新订阅：`./scripts/update-subscribe.sh`（本地拉取 → 过滤日本/新加坡节点 → 上传 → 重启，一条龙）
 - 日志智能分诊：`./scripts/diagnose.sh`（TypeSafe Jev 判断节点故障 / 故障类型 / 健康度，需 `TYPESAFE_API_KEY` 与 jq；日志自动脱敏后出网）
-- 自动选优：主组「自动优选」是 fallback 组——`nodes` 第 1 个为**默认节点**（可达即锁定，稳定优先），其余为**备用候选**（url-test 自动选优，tolerance 500ms 防抖动），默认节点劣化才切备用。`node` 由 watchdog 上报记录当前实际节点。想固定某节点：把 `nodes` 只留它，重启
+- 自动选优：主组「自动优选」是 select 组，成员为新加坡组/日本组两个 url-test 国家组——组内单节点故障内核秒级自愈；整国劣化时 judge.sh 每 5 分钟双探针（GitHub + Google）实测打分，连续 2 次领先 20% 才自动跨国切换，防打地鼠。`node` 由 watchdog 两层展开上报
 
 ## 怎么工作
 
@@ -97,14 +87,14 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 - `proxy-server-nameserver`：节点域名（如 `节点.example.com`）用真实 DNS 解析，防止被 fake-ip 化导致内核连节点死循环
 - `default-nameserver`：bootstrap，解析 DNS 服务器自身的域名
 
-**④ 自动选优组**（`external-controller: 9090` + `secret`）
-主组「自动优选」是 fallback 组：`nodes` 第 1 个为**默认节点**（可达即锁定，稳定优先），其余为**备用候选**（url-test 组「自动优选-备用」，每 60s 测 GitHub 自动选延迟最优，tolerance 500ms 防抖动）。默认节点劣化才切备用组，避免延迟接近的候选因测速噪声横跳断连。watchdog 只读 `GET /proxies/自动优选`（备用组选中时展开一层）把当前实际节点落盘到 `node` 供查看，不再驱动切换。
+**④ 跨国自动选优**（`external-controller: 9090` + `secret`）
+主组「自动优选」是 **select** 组，成员为每国一个 **url-test** 组（新加坡组/日本组，每 60s 测 GitHub 选组内最优，tolerance 500ms 防抖）——单节点故障组内秒级自愈。国家级劣化由 `/usr/share/miniclash/judge.sh`（cron 每 5 分钟）裁决：对每节点实测 GitHub + Google **双目标**（单探针对半死节点有盲区：探针返 204、业务却 EOF），国家分 = 最快 2 个活节点延迟均值；连续 2 次同一别国领先且当前国慢 20%（当前国不可用直接满足）才经 API `PUT` 切换 select——双确认 + margin 防横跳。watchdog 只做两层展开（select → 国家组 → 节点）把实际节点落盘 `node`，不驱动切换。
 
-**⑤ 订阅 YAML 直通**
-`proxies:` 起的部分原样交给内核：45 个 anytls 节点、proxy-groups（BoostNet / 自动选择 / 故障转移）、rules（含 `GEOIP,CN,DIRECT` 大陆直连）全部由内核原生解析、健康检查（url-test）和分流。MiniClash 只覆盖端口 / DNS / API 三块头部，不翻译任何协议。订阅源常在 YAML 头塞信息伪装条目（剩余流量/到期日/官网），dashboard 会显示但不影响出网——所有规则走「自动优选」。
+**⑤ 订阅本地过滤 + YAML 直通**
+订阅地址只存在于 Mac 的 update-subscribe.sh：本地拉取（base64 自动解码）后过滤 `proxies:` 段，仅保留日本/新加坡 16 个节点（信息伪装条目同步剔除），订阅自带 proxy-groups 段整段删除，再上传路由器。rules（含 `GEOIP,CN,DIRECT` 大陆直连）原样保留，节点与规则由内核原生解析，不翻译任何协议；MiniClash 只覆盖端口 / DNS / API 三块头部。所有规则走「自动优选」。
 
 五处例外：
-- **自动优选组**：init.d 在 proxy-groups 段注入 `{ name: 自动优选, type: fallback, proxies: [默认节点, '自动优选-备用'], url: 'github.com/generate_204', interval: 60, expected-status: 200/204 }` + `{ name: 自动优选-备用, type: url-test, proxies: [其余候选], url: 'github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }`（默认节点 = `nodes` 第 1 个，可达即锁定；劣化才切备用 url-test 组；expected-status 只认真实 204 防劫持假 200 误判），并把 rules 里所有 `,BoostNet` 引用改为 `,自动优选`。不用订阅自带「自动选择」组：它测 gstatic 会把日本判死，且含香港（Claude 不通）。
+- **自动优选组**：init.d 按节点名前缀归集到国家组，在 rules 段前生成 select 主组 + 每国一个 url-test 组（`interval: 60 / tolerance: 500 / expected-status: 200/204`，expected-status 只认真实 204 防劫持假 200 误判），并把 rules 里所有 `,BoostNet` 引用改为 `,自动优选`。不用订阅自带「自动选择」组：它测 gstatic 会把日本判死，且含香港（Claude 不通）。
 - **Apple 全家**：订阅的 `apple.com,DIRECT` / `icloud.com,DIRECT` 把 Apple 服务兜成直连而本网络连不上 Apple（APNs/TestFlight/iCloud/配置服务均超时），故注入 `DOMAIN-SUFFIX,apple.com,自动优选` + `DOMAIN-SUFFIX,icloud.com,自动优选` 整体走代理。
 - **微软服务**：订阅把 `microsoft.com / microsoftonline.com / office.com / office365.com / live.com / officecdn` 兜成 DIRECT，本网络直连同样超时，故注入这些域名 → 自动优选（与 Apple 同一注入机制）。
 - **国内强制直连**：hf-mirror.com 服务器在东京（SAKURA）、xiaohongshu.com 部分海外 CDN、sun-clan.com，本网络可直连却被 GEOIP 兜进代理，故注入 `DOMAIN-SUFFIX,hf-mirror.com,DIRECT` + `DOMAIN-KEYWORD,xiaohongshu,DIRECT` + `DOMAIN-SUFFIX,sun-clan.com,DIRECT` 强制直连（同一注入机制）。
@@ -118,18 +108,19 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 |------|------|
 | 海外全不通，日志 `context deadline exceeded` | iptables 本机出站被劫持成自环 → 重跑 `./scripts/install.sh` |
 | 海外域名解析成假 IP、fake-ip 不生效 | dnsmasq 需 `restart`（`reload` 不重读 `/tmp/dnsmasq.d/`） |
-| 重启后内核 / 订阅消失 | F2FS 恢复吞文件 → 重跑 `install.sh` 再 `start`（订阅自动重下） |
+| 重启后内核 / 订阅消失 | F2FS 恢复吞文件 → 内核重跑 `install.sh`；订阅重跑 `./scripts/update-subscribe.sh` |
 | 某线路到个别站点不通（如日本 → gstatic） | 换**线路**（日本/香港/台湾…），同线路换节点无效（共用一个出口） |
+| 整国线路劣化（如日本全部节点 EOF / 高延迟） | judge 最多 10 分钟自动切到别国；急时手动切：在路由器执行 `curl -X PUT -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" -H 'Content-Type: application/json' -d '{"name":"新加坡组"}' http://127.0.0.1:9090/proxies/自动优选` |
 | iPhone / Apple 推送不通（`push.apple.com` 直连超时） | 订阅 `apple.com,DIRECT` 把 APNs 兜成直连而本网络连不上 Apple → init.d 已自动在 rules 最前注入 `push.apple.com → 自动优选`，重启生效 |
 | Microsoft 账号 / OneDrive / Office 登录超时 | 订阅把微软域名兜成 DIRECT 而本网络直连不通 → init.d 已注入微软域名 → 自动优选，重启生效 |
 
 ## 状态
 
-- [x] 无界面纯配置：7 个 UCI 字段（含默认值容错）+ 1 个脚本 + 1 条命令部署
-- [x] 订阅下载（YAML 直通，5MB 上限，base64 检测，3 次重试 + 30s 超时）
+- [x] 无界面纯配置：4 个 UCI 字段 + 单 init.d + 1 条命令部署
+- [x] 订阅本地更新（拉取/base64 检测/过滤日+新 16 节点/上传/重启，路由器不保存订阅地址）
 - [x] fake-ip + DoH 防污染 + 节点域名走真实 DNS 防环路
-- [x] 自动选优：fallback 组（默认节点可达即锁定，劣化才切备用 url-test 组，tolerance 500 防抖动）
-- [x] watchdog 上报当前实际节点到 uci（fallback 选中备用组且无活跃代理时返回 DIRECT，防脏数据）
+- [x] 自动选优：select 主组 + 国家 url-test 组（组内秒级自愈；judge 每 5 分钟双探针跨国裁决，双确认 + 20% margin 防抖）
+- [x] watchdog 两层展开上报当前实际节点到 uci（select → 国家组 → 节点）
 - [x] 大陆 `GEOIP,CN,DIRECT` 直连
 - [x] 内核 + GeoIP 库内置，update-kernel.sh 一条命令更新（含 MD5 校验防损坏），F2FS 丢文件 `install.sh` 恢复
 - [x] 真机验证：google / youtube / github 通，大陆直连
@@ -137,6 +128,5 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 
 ## 相关文档
 
-- [新增机场](docs/add-airport.md) — 配置文件格式、字段约束、切换与验证步骤
 - [架构说明](docs/architecture.md) — 目录结构、运行时文件、调用链路
 - [mihomo 指南](docs/mihomo-guide.md) — 内核各能力的使用与设计取舍

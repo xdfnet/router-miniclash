@@ -11,6 +11,8 @@ echo "    /etc/rc.d/*miniclash         开机自启项"
 echo "    /etc/config/miniclash        配置"
 echo "    /usr/bin/mihomo              内核二进制"
 echo "    /etc/miniclash/              运行时数据（订阅/配置/日志/Country.mmdb）"
+echo "    /usr/share/miniclash/        judge.sh 与 GeoIP 备份"
+echo "    crontab judge.sh 定时裁决条目"
 echo "    LuCI 界面文件 (controller/view)"
 read -r -p "确认卸载？(y/N) " ans
 [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { echo "已取消"; exit 1; }
@@ -26,6 +28,9 @@ rm -f /etc/rc.d/*miniclash
 rm -f /etc/config/miniclash
 rm -f /usr/bin/mihomo
 rm -rf /etc/miniclash
+rm -rf /usr/share/miniclash
+sed -i '/judge\.sh/d' /etc/crontabs/root 2>/dev/null
+/etc/init.d/cron restart 2>/dev/null
 rm -f /usr/lib/lua/luci/controller/miniclash.lua
 rm -rf /usr/lib/lua/luci/view/miniclash
 rm -f /usr/lib/lua/luci/model/cbi/miniclash.lua

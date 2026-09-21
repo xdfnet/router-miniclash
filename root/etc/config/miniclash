@@ -1,18 +1,9 @@
 config core 'core'
 	# 总开关：1 启动，0 停止
 	option enabled '1'
-	# 订阅地址（BoostNet 主力机场，anytls；永久官网 999.boostqz.com）
-	option url 'https://sub.boost1.shop/d/ffcce85760a36bd44a367cebcb2c97a5'
-	# 备用机场切换：改下面 url + nodes 两行后重启即切换（东方互联，bluebird YAML，2 空格缩进）：
-	#   url 'https://admindf.alphagatelink.com/sumapi/4EZTxOPjhHbvxn8L/bluebird'
-	#   nodes '俄罗斯 VIP3 DF2,日本 Reality 测试,澳大利亚  DF2 官网dfhl1.com,美国 31 纽约 DF2'
-	# 重启时强制重新下载订阅（1 开启，0 复用已下载）
-	option force_update '0'
-	# 主代理组名（fallback：第 1 个节点为默认，其余为 url-test 备用候选）
+	# 主代理组名（select 主组，国家选择由 judge 裁决）
 	option group '自动优选'
 	# 当前实际节点（watchdog 自动更新，仅供查看）
-	option node '日本1'
-	# 自动优选：默认日本1（gstatic 恒定 129ms 最稳），备选日本2/3/4（url-test 自动选优）
-	option nodes '日本1,日本2,日本3,日本4'
+	option node '新加坡1'
 	# 节点上报间隔（秒）
 	option check_interval '60'

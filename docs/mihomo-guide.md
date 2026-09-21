@@ -3,7 +3,7 @@
 MiniClash 不翻译任何协议，直接用 mihomo 内核的能力。本文对照 mihomo 官方文档（[meta-docs](https://github.com/metacubex/meta-docs)，按 2026-09 版整理）把内核每个模块讲清楚：**官方语义是什么 → MiniClash 怎么用的 → 怎么验证**。内核版本 v1.19.30。
 
 - 运行时配置文件：`/etc/miniclash/config.yaml`（由 `/etc/init.d/miniclash` 的 `gen_config()` 生成）
-- 设计全貌见 [architecture.md](architecture.md)，事故与调参缘由见 [CHANGELOG.md](CHANGELOG.md)
+- 设计全貌见 [architecture.md](architecture.md)
 
 ---
 
@@ -14,7 +14,7 @@ MiniClash 不翻译任何协议，直接用 mihomo 内核的能力。本文对�
    ┌──────────────────────────────────────────┐
    │ general   端口/模式/日志/API 头部（自写）    │
    │ proxies   订阅 anytls 节点直通（不翻译）    │
-   │ proxy-groups 自动优选=fallback+url-test    │
+   │ proxy-groups 自动优选=select+国家url-test  │
    │ rules     订阅规则直通 + 注入 EXTRA        │
    │ dns       fake-ip 三层防污染              │
    │ listeners redir(劫持)/mixed(测试)/tproxy    │
@@ -63,7 +63,7 @@ MiniClash 不翻译任何协议，直接用 mihomo 内核的能力。本文对�
 
 | 字段 | 官方语义 | MiniClash |
 |------|----------|-----------|
-| `profile.store-selected` | 持久化 API 对策略组的选择，重启沿用 | 未设（fallback 重启后按配置重新选默认节点，行为一致） |
+| `profile.store-selected` | 持久化 API 对策略组的选择，重启沿用 | 未设（select 重启后默认选第一个国家组，judge 会重新裁决，行为一致） |
 | `profile.store-fake-ip` | 持久化 fake-ip 映射表 | 未设（可选，加速重启后 DNS） |
 | `unified-delay` | 统一 RTT 计算，消除不同类型节点握手差异 | 未设（单协议 anytls，差异不大） |
 | `tcp-concurrent` | 用 DNS 解析出所有 IP 并发连接，取首个成功 | 未设（默认关，减少重复连接） |
@@ -103,21 +103,21 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 
 | 类型 | 官方语义 | MiniClash |
 |------|----------|-----------|
-| `select` | 手动选择，默认选第一个（或 `default-selected`） | 未用（自动化） |
-| `url-test` | 定时测速，**自动选延迟最优** | ✅ 备用组「自动优选-备用」 |
-| `fallback` | 当前节点超时，**按顺序选第一个可用** | ✅ 主组「自动优选」 |
+| `select` | 手动选择，默认选第一个（或 `default-selected`） | ✅ 主组「自动优选」（judge 经 API 裁决国家） |
+| `url-test` | 定时测速，**自动选延迟最优** | ✅ 国家组「新加坡组」「日本组」 |
+| `fallback` | 当前节点超时，**按顺序选第一个可用** | 未用 |
 | `load-balance` | 负载均衡：`round-robin` / `consistent-hashing` / `sticky-sessions` | 未用 |
 | `relay` | 链路代理（如 A→B→C 级联） | 未用 |
 
-> **fallback 与 url-test 的本质区别**：fallback 是"故障转移"——主用节点超时就切下一个，稳定优先；url-test 是"择优"——一直测速选延迟最低，性能优先。MiniClash 用它俩组合出"默认节点 + 备用择优"。
+> **select 与 url-test 的分工**：select 是"裁决层"——国家选择由 judge 双确认后经 API 指定，稳定优先；url-test 是"组内择优"——一直测速选延迟最低，性能优先。两层组合出"组内秒级自愈 + 国家 10 分钟防抖裁决"。
 
 ### 3.2 通用字段（健康检查核心）
 
 | 字段 | 官方语义 | MiniClash 值 |
 |------|----------|-------------|
-| `name` | 组名，特殊符号需引号 | `自动优选` / `自动优选-备用` |
-| `type` | 组类型 | `fallback` / `url-test` |
-| `proxies` | 引入出站代理或其他策略组 | 默认节点 / 候选节点；主组还引入备用组 |
+| `name` | 组名，特殊符号需引号 | `自动优选` / `新加坡组` / `日本组` |
+| `type` | 组类型 | `select` / `url-test` |
+| `proxies` | 引入出站代理或其他策略组 | select 引入国家组；国家组引入节点 |
 | `use` | 引入代理集合（proxy-providers） | 未用（节点走订阅 `proxies:`） |
 | `url` | 健康检查测试地址 | `https://github.com/generate_204` |
 | `interval` | 健康检查间隔，不为 0 启用定时测试（秒） | `60` |
@@ -126,25 +126,27 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 | `expected-status` | 健康检查期望状态码，默认 `*`（任意都算通） | `200/204`（只认真实 204） |
 | `timeout` | 健康检查超时（ms） | 未设（默认 5000） |
 | `max-failed-times` | 最大失败次数，超过触发强制健康检查，默认 5 | 未设 |
-| `filter` / `exclude-filter` | 按正则筛/排除节点（仅对 use/include-all 生效） | 未用（候选由 UCI `nodes` 显式给定） |
+| `filter` / `exclude-filter` | 按正则筛/排除节点（仅对 use/include-all 生效） | 未用（节点本地过滤后经订阅显式给定） |
 | `disable-udp` | 禁用该组 UDP | 未设 |
 
 ### 3.3 MiniClash 的实际结构
 
 ```yaml
-# nodes 第 1 个为默认节点，其余为备用候选
-- { name: 自动优选,       type: fallback,  proxies: ['日本1', '自动优选-备用'],
-    url: 'https://github.com/generate_204', interval: 60, expected-status: 200/204 }
-- { name: 自动优选-备用,  type: url-test,   proxies: ['日本2','日本3','日本4'],
+# select 主组：成员为国家组，judge 经 API 裁决
+- { name: 自动优选, type: select, proxies: ['新加坡组','日本组'] }
+# 国家组：组内 url-test 择优（新加坡8节点、日本8节点，节点本地过滤后上传）
+- { name: 新加坡组, type: url-test, proxies: ['新加坡1',…,'新加坡8'],
+    url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }
+- { name: 日本组, type: url-test, proxies: ['日本1',…,'日本8'],
     url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }
 ```
 
-行为：**默认节点（日本1）可达即锁定**；劣化（健康检查失败）**立即切**到备用组；备用组内 url-test 每 60s 择优，候选须领先 500ms 才切换。切换与调参缘由见 [CHANGELOG.md](CHANGELOG.md)（2026-09-01）与 [事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
+行为：国家组内单节点劣化 **60s 内自动切**（tolerance 500ms 防组内噪声）；整国劣化由 judge 双探针实测、**双确认 + 20% margin** 后切国家组（见 architecture.md「自动选优」）。2026-09-01 拨号事故见 [事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
 
 **验证**：
 ```sh
 curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
-  http://127.0.0.1:9090/proxies/自动优选   # 看 now/type；备用组选中时 now=组名，再查 /proxies/自动优选-备用
+  http://127.0.0.1:9090/proxies/自动优选   # now 是国家组名，再查 /proxies/新加坡组 看实际节点
 ```
 
 ---
@@ -225,8 +227,8 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 
 ### 5.3 MiniClash 的规则构成
 
-1. **订阅 rules 原样直通**（proxy-groups 与 rules 都由订阅带）
-2. **注入 EXTRA 规则**（在 `rules:` 最前，缩进跟随订阅自适应）：
+1. **订阅 rules 原样直通**（订阅自带 proxy-groups 在本地过滤时已删除，组由 gen_config 统一生成）
+2. **注入 EXTRA 规则**（在 `rules:` 最前，缩进取 rules 首元素对齐）：
    - `DOMAIN-SUFFIX,apple.com/icloud.com/microsoft.com/…,自动优选`（订阅 DIRECT 兜底但本网直连不通的海外服务）
    - `DOMAIN-KEYWORD,xiaohongshu,DIRECT`、`DOMAIN-SUFFIX,hf-mirror.com/sun-clan.com,DIRECT`（国内可直连却会被兜进代理的）
 3. **订阅默认组引用改指「自动优选」**（`BoostNet`/`🔰国外流量`/`⚓️其他流量` → 自动优选）
@@ -249,7 +251,7 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" http://127.0
 |------|------|------|-------------|
 | `/proxies` | GET | 全部代理/组，策略组含 `now`/`all`/`type`/`fixed`/`history` | watchdog 查 |
 | `/proxies/自动优选` | GET | 单组：`now` 当前选中、`type`、`all` 成员 | ✅ |
-| `/proxies/<name>` | PUT | 手动切换（`{"name":"日本1"}`） | 调试用 |
+| `/proxies/<name>` | PUT | 手动切换（主组传国家组名 `{"name":"新加坡组"}`） | judge 裁决 / 调试用 |
 | `/proxies/<name>` | DELETE | 清除 url-test/fallback 的 fixed 固定选择 | — |
 | `/proxies/<name>/delay` | GET | 单点测速：`?url=xxx&timeout=5000&expected=200/204` | 测节点 |
 | `/group/<name>/delay` | GET | 组内全部成员测速 | 调试 |
@@ -271,9 +273,9 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" http://127.0
 
 **watchdog 的用法**（每 `check_interval` 秒一次）：
 ```sh
-# 读主组当前节点；若 now 是备用组名，再展开一层取实际节点
-GET /proxies/自动优选        → now=日本1
-GET /proxies/自动优选-备用    → 备用组内实际选中
+# 读主组当前国家；now 是国家组名，再展开一层取实际节点
+GET /proxies/自动优选   → now=新加坡组
+GET /proxies/新加坡组  → 组内实际选中
 ```
 
 ---
@@ -292,7 +294,7 @@ GET /proxies/自动优选-备用    → 备用组内实际选中
 
 **官方语义**：客户端 utls 指纹，仅适用于 VMess/VLESS/Trojan/AnyTLS。可选：`chrome`/`firefox`/`safari`/`ios`/`android`/`edge`/`360`/`qq`/`random`。
 
-**MiniClash 注入规则**（`gen_config` 的 awk）：proxies 段里**无 `client-fingerprint` 的 flow 节点统一补 `firefox`**（跳过 proxy-groups、跳过已有指纹）。
+**MiniClash 注入规则**（`gen_config` 的 awk）：proxies 段里**无 `client-fingerprint` 的 flow 节点统一补 `firefox`**（跳过已有指纹）。
 
 **为什么**：mihomo 默认指纹的 ClientHello 达 1510B，超过 TCP MSS(1452)；路由器 GSO/TSO 合并大包被中间设备丢前段 → TLS 握手永不完整 → 全部节点 `i/o timeout`。firefox 指纹包小单段不分片，握手正常。完整因果见 [事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
 
@@ -308,14 +310,14 @@ grep -A2 '日本1' /etc/miniclash/config.yaml | head -5   # 应含 client-finger
 | 参数 | 官方语义 | MiniClash 值 | 为什么 |
 |------|----------|-------------|--------|
 | `url` | 健康检查测试地址 | `github.com/generate_204` | 与真实场景一致；不用订阅的 gstatic（判死日本） |
-| `interval` | 检查间隔（秒），fallback/url-test 均适用 | `60` | 官方默认 300，机场劣化分钟级，60 已够积极 |
-| `tolerance` | url-test 切换容差（ms） | `500` | 日本候选 129~391ms 波动，500 压住测速噪声横跳 |
+| `interval` | 检查间隔（秒），url-test 适用 | `60` | 官方默认 300，机场劣化分钟级，60 已够积极 |
+| `tolerance` | url-test 切换容差（ms） | `500` | 同国节点延迟接近且波动，500 压住测速噪声横跳 |
 | `expected-status` | 期望响应码，默认 `*` 任意都算通 | `200/204` | 只认真实 204，防劫持假 200 误判健康 |
 | `timeout` | 检查超时（ms），默认 5000 | 未设 | 默认够用 |
 | `max-failed-times` | 超过则强制健康检查，默认 5 | 未设 | 默认即可 |
 | `lazy` | 未选中不测速，默认 true | 未设 | 全屋常流量，省不了多少 |
 
-**关键行为**：fallback 当前节点超时即**立即切换**（不等整个 interval）；url-test 的 tolerance 决定"领先多少才切"。**切换会断连**（在途连接重建），所以默认节点锁定 + 500ms 门槛是"慢半拍但稳"，正是 2026-09-01 事故后定调的设计。
+**关键行为**：url-test 当前节点超时即**立即触发测速切换**（不等整个 interval），tolerance 决定"领先多少才切"。**切换会断连**（在途连接重建），所以组内 500ms 门槛、国家由 judge 双确认 + 20% margin 裁决，是"慢半拍但稳"的定调设计。
 
 ---
 
@@ -346,10 +348,10 @@ cat /etc/miniclash/config.yaml                       # 看注入的组/规则/�
 # API（需要 secret）
 S="Authorization: Bearer $(cat /etc/miniclash/api_secret)"
 
-# 自动优选当前节点
+# 自动优选当前国家
 curl -s -H "$S" http://127.0.0.1:9090/proxies/自动优选 | grep -oE '"(now|type)":"[^"]*"'
-# 备用组实际选中（fallback 切到备用组时）
-curl -s -H "$S" http://127.0.0.1:9090/proxies/自动优选-备用 | grep -oE '"(now|type)":"[^"]*"'
+# 国家组实际选中（再展开一层）
+curl -s -H "$S" http://127.0.0.1:9090/proxies/新加坡组 | grep -oE '"now":"[^"]*"'
 
 # 单点测速（expected 只认真实 204）
 curl -s -H "$S" 'http://127.0.0.1:9090/proxies/日本1/delay?url=https://github.com/generate_204&timeout=5000&expected=200/204'

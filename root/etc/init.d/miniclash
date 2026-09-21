@@ -4,7 +4,8 @@
 # miniclash — 极简透明代理（单文件全逻辑，无界面）
 #
 # 依赖: /usr/bin/mihomo 内核二进制
-# 配置: /etc/config/miniclash   （UCI，url / enabled / force_update / group / node / nodes / check_interval）
+# 配置: /etc/config/miniclash   （UCI，enabled / group / node / check_interval）
+# 订阅: 由 Mac scripts/update-subscribe.sh 拉取过滤后上传（路由器不保存订阅地址）
 # 工作: /etc/miniclash/          （订阅、生成配置、日志）
 # 透明代理: TCP REDIRECT 7892 · DNS fake-ip 7874 · API 9090
 # ============================================================
@@ -36,42 +37,11 @@ api_secret() {
 
 is_running() { pidof mihomo >/dev/null 2>&1; }
 
-# ---------- 1. 订阅下载（带重试） ----------
-subscribe() {
-    local url=$(get url)
-    [ -n "$url" ] || { log "未配置订阅 URL"; return 1; }
-
-    log "下载订阅: ${url%%\?*}"
-    # 5MB 上限 + 30s 超时 + 常见 UA + 最多 3 次重试（慢网络/海外节点拉订阅需容错）
-    local dl_ok=0
-    for attempt in 1 2 3; do
-        if curl -fsSL --max-time 30 --max-filesize 5242880 \
-            -A "clash-verge/v2.2.6" \
-            -o $WORKDIR/.dl "$url" 2>/dev/null; then
-            dl_ok=1
-            break
-        fi
-        log "订阅下载第 $attempt 次失败，${attempt} 秒后重试"
-        [ $attempt -lt 3 ] && sleep 2
-    done
-    [ $dl_ok -eq 1 ] || { log "订阅下载失败（3 次重试均失败）"; rm -f $WORKDIR/.dl; return 1; }
-
-    # Base64 检测并解码（订阅常被 base64 包裹）
-    if head -c 128 $WORKDIR/.dl | grep -qE '^[A-Za-z0-9+/=]{40,}$'; then
-        base64 -d $WORKDIR/.dl > $WORKDIR/.dl2 2>/dev/null && mv $WORKDIR/.dl2 $WORKDIR/.dl
-    fi
-
-    grep -q '^proxies:' $WORKDIR/.dl || { log "订阅不含 proxies: 段（暂只支持 YAML 订阅）"; rm -f $WORKDIR/.dl; return 1; }
-    mv $WORKDIR/.dl $SUBSCRIBE
-    log "订阅更新完成 ($(wc -c < $SUBSCRIBE) 字节)"
-    return 0
-}
-
-# ---------- 2. 生成运行时配置 ----------
+# ---------- 1. 生成运行时配置 ----------
 # 头部由我们控制（端口/DNS/API），订阅只取 proxies: 起的部分
 # （保留订阅自带的 proxy-groups 与 rules，丢掉其 port/dns 段）
 gen_config() {
-    local secret=$(api_secret) group=$(get group) nodes=$(get nodes)
+    local secret=$(api_secret) group=$(get group)
 
     {
         echo "mixed-port: 7893"
@@ -127,64 +97,57 @@ gen_config() {
         else
             EXTRA=""
         fi
-        # 自动优选组：nodes 第 1 个为默认节点（fallback 主组，可达即锁定），其余为备用候选（url-test 自动选优）。
-        # 稳定优先：默认节点通就用它，劣化才切备用组，避免延迟接近的候选横跳断连（2026-09-01 飞哥定调：日本1默认；2026-09-05 切新加坡：新加坡1默认，2/3/4候选）。
-        # 不用订阅自带"自动选择"组：它测 gstatic 会把日本判死，且含香港（Claude 不通）。
-        # 节点名转带单引号的 YAML 列表（订阅节点名含中文/空格，如 "日本 Reality 测试"）
-        # 默认值：group 默认为"自动优选"，nodes 默认为"新加坡1"，check_interval 默认为 60
+        # 自动优选 = select 主组 + 每个国家一个 url-test 组（judge 经 API 裁决国家，见 /usr/share/miniclash/judge.sh）
+        # 订阅节点名带国家前缀（日本1~8、新加坡1~8…），按 countries 归集；伪装信息条目不匹配任何前缀自动排除
         group=${group:-自动优选}
-        nodes=${nodes:-新加坡1}
-        local check_interval=$(get check_interval); check_interval=${check_interval:-60}
-        first=$(echo "$nodes" | cut -d, -f1)
-        rest=$(echo "$nodes" | cut -d, -f2-)
-        first_q=$(printf "'%s'" "$first")
-        # tolerance 500ms：备用候选延迟接近且波动时（日本节点 129~391ms）300ms 仍会因测速噪声横跳
-        # → 切换瞬间断连导致大请求间歇失败（2026-09-01）；500ms 锁定稳定节点，仅真正劣化才切
-        # expected-status 200/204：健康检查只认真实 204（generate_204 固定返回），防劫持假 200 误判健康
-        fallback_group="    - { name: 自动优选, type: fallback, proxies: [$first_q, '自动优选-备用'], url: 'https://github.com/generate_204', interval: 60, expected-status: 200/204 }"
-        if [ -n "$rest" ]; then
-            rest_q=$(IFS=,; for n in $rest; do printf "'%s'," "$n"; done | sed 's/,$//')
-            url_group="    - { name: 自动优选-备用, type: url-test, proxies: [$rest_q], url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }"
-            auto_group="$fallback_group\n$url_group"
-        else
-            # 单节点时退化为纯 fallback（即固定该节点）
-            auto_group="$fallback_group"
-        fi
+        # 参与裁决的国家（有序，第 1 个为 select 默认；单一场景固化，节点按订阅名前缀归集）
+        countries=新加坡,日本
+        all_names=$(awk '/^proxies:/{p=1;next}/^[a-z-]+:/{p=0}p' $SUBSCRIBE \
+            | grep -oE "name: [^,}]+" | sed "s/name: //; s/^'//; s/'$//")
+        group_names=""
+        auto_lines=""
+        for c in $(echo "$countries" | tr ',' ' '); do
+            gname="${c}组"
+            group_names="$group_names,'$gname'"
+            qlist=$(for n in $all_names; do case "$n" in ("$c"*) printf "'%s'," "$n";; esac; done | sed 's/,$//')
+            # tolerance 500ms 防组内因测速噪声横跳；expected-status 只认真实 204，防劫持假 200
+            auto_lines="$auto_lines
+    - { name: $gname, type: url-test, proxies: [$qlist], url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }"
+        done
+        group_names=$(echo "$group_names" | sed 's/^,//')
+        auto_group="    - { name: $group, type: select, proxies: [$group_names] }$auto_lines"
         awk -v extra="$EXTRA" -v auto="$auto_group" '
             /^proxies:/{p=1}
-            /^proxy-groups:/{pg=1}
             # 注入 TLS 指纹：flow 节点缺 fingerprint 统一补 firefox
             # （mihomo 默认指纹 ClientHello 超 MSS 触发 GSO 大包，中间设备丢前段 → 2026-09-01 BoostNet SACK 丢段根因；firefox 指纹包小不分片）
-            p && !pg && /^ *- \{/ && $0 !~ /client-fingerprint/ { sub(/ *\}$/, ", client-fingerprint: firefox }") }
+            p && /^ *- \{/ && $0 !~ /client-fingerprint/ { sub(/ *\}$/, ", client-fingerprint: firefox }") }
             p {
-                # 注入自动优选组：分别取 proxy-groups 和 rules 各自的缩进（防机场混用缩进导致注入错位）
-                if (auto != "" && $0 ~ /^proxy-groups:/) {
-                    print
-                    getline nxt
-                    match(nxt, /^ */); ind = RLENGTH
-                    n = split(auto, gs, "\n")
-                    for (i = 1; i <= n; i++) {
-                        sub(/^ +/, "", gs[i])
-                        for (k = 0; k < ind; k++) printf " "
-                        print gs[i]
-                    }
-                    print nxt
-                    next
-                }
                 # 订阅默认组 → 统一改指自动优选（老订阅 BoostNet、新订阅 🔰国外流量/⚓️其他流量）
                 gsub(/,BoostNet/, ",自动优选")
                 gsub(/,🔰国外流量/, ",自动优选")
                 gsub(/,⚓️其他流量/, ",自动优选")
-                # 注入 EXTRA 规则：缩进跟随订阅 rules 首个元素
-                if (extra != "" && $0 ~ /^rules:/) {
-                    print
+                # rules: 前生成 proxy-groups 段（自动优选组），rules 顶部注入 extra
+                # （订阅 proxy-groups 段已在本地过滤时删除）；缩进统一取 rules 首元素
+                if ($0 ~ /^rules:/) {
                     getline rxt
                     match(rxt, /^ */); rind = RLENGTH
-                    n = split(extra, xlines, "\n")
-                    for (i = 1; i <= n; i++) {
-                        sub(/^ +/, "", xlines[i])
-                        for (k = 0; k < rind; k++) printf " "
-                        print xlines[i]
+                    if (auto != "") {
+                        print "proxy-groups:"
+                        n = split(auto, gs, "\n")
+                        for (i = 1; i <= n; i++) {
+                            sub(/^ +/, "", gs[i])
+                            for (k = 0; k < rind; k++) printf " "
+                            print gs[i]
+                        }
+                    }
+                    print "rules:"
+                    if (extra != "") {
+                        n = split(extra, xlines, "\n")
+                        for (i = 1; i <= n; i++) {
+                            sub(/^ +/, "", xlines[i])
+                            for (k = 0; k < rind; k++) printf " "
+                            print xlines[i]
+                        }
                     }
                     print rxt
                     next
@@ -238,8 +201,8 @@ dns_stop() {
 }
 
 # ---------- watchdog（上报当前节点） ----------
-# 主组"自动优选"是 fallback 组：默认节点可达即锁定，劣化才切备用 url-test 组，切换交给内核。
-# watchdog 只读内核当前实际节点（备用组选中时展开一层）落盘到 uci node，供查看（不再驱动切换）。
+# 主组"自动优选"是 select 组，成员是各国家 url-test 组，国家选择由 judge 裁决（见 /usr/share/miniclash/judge.sh）。
+# watchdog 只读当前实际节点（select → 国家组展开两层）落盘到 uci node，供查看，不驱动切换。
 WATCHDOG_PID=/var/run/miniclash_watchdog.pid
 
 watchdog() {
@@ -249,16 +212,13 @@ watchdog() {
         sleep $interval
         local now=$(curl -s --max-time 3 -H "Authorization: Bearer $secret" \
             http://127.0.0.1:9090/proxies/$group | grep -oE '"now":"[^"]*"' | head -1 | cut -d'"' -f4)
-        # fallback 选中备用组时 now 是组名（自动优选-备用），展开一层取实际节点
+        # select 选中国家组时 now 是组名（日本组），展开一层取实际节点
         if [ -n "$now" ]; then
             local sub=$(curl -s --max-time 3 -H "Authorization: Bearer $secret" \
                 http://127.0.0.1:9090/proxies/$now | grep -oE '"now":"[^"]*"' | head -1 | cut -d'"' -f4)
-            # 备用组也劣化时（所有候选都死），sub 可能等于 now（组名）或为空
-            # 此时返回 DIRECT 而非组名，防止落盘脏数据（"自动优选-备用" 字符串）
+            # 国家组所有节点都死时 sub 等于 now（组名），无法展开；保留组名也比脏节点名好，仅在确为节点时采用
             if [ -n "$sub" ] && [ "$sub" != "$now" ]; then
                 now="$sub"
-            elif [ "$now" = "自动优选-备用" ]; then
-                now="DIRECT"
             fi
         fi
         [ -n "$now" ] && [ "$now" != "$(get node)" ] && {
@@ -277,16 +237,8 @@ start() {
     [ -x $BIN ] || { log "错误: 内核不存在 ($BIN)"; return 1; }
     mkdir -p $WORKDIR
 
-    # 首次或订阅文件缺失时更新订阅
-    if [ ! -f $SUBSCRIBE ] || [ "$(get force_update)" = "1" ]; then
-        subscribe || return 1
-        # 强制刷新成功后自动恢复，避免下次 restart 又重下订阅
-        if [ "$(get force_update)" = "1" ]; then
-            uci set miniclash.core.force_update=0
-            uci commit miniclash
-            log "force_update 已自动恢复为 0"
-        fi
-    fi
+    # 订阅由本地 scripts/update-subscribe.sh 上传（路由器不下载）
+    [ -f $SUBSCRIBE ] || { log "订阅不存在：请在 Mac 运行 ./scripts/update-subscribe.sh"; return 1; }
     gen_config || return 1
 
     # 校验 GeoIP 库完整性（install.sh 已备份到 /usr/share/miniclash/ 防 F2FS 丢文件）
@@ -308,6 +260,10 @@ start() {
     # 关闭 WAN 接口 GSO/TSO：mihomo 隧道内 TLS record 超 MSS 被网卡合并大包，中间设备丢前段
     # → 大流量传输间歇失败（2026-09-01 根因之二，配合 client-fingerprint 注入解决握手层）
     ethtool -K eth1 gso off tso off 2>/dev/null
+    # 幂等安装 judge cron（每 5 分钟跨国裁决），重启 cron 加载
+    grep -q judge.sh /etc/crontabs/root 2>/dev/null || \
+        echo '*/5 * * * * /usr/share/miniclash/judge.sh' >> /etc/crontabs/root
+    /etc/init.d/cron restart 2>/dev/null
     log "已启动 (PID $(pidof mihomo))"
     return 0
 }
