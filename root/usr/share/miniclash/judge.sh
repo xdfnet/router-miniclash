@@ -74,39 +74,52 @@ current=$(curl -s --max-time 3 -H "Authorization: Bearer $SECRET" \
 cur_c=${current%组}
 cur_s=$(score "$cur_c")
 
-# best = 分数最低的可用国家
-best=; best_s=
+# best = 分数最低的可用国家；summary 汇总各国分数供每次落日志
+best=; best_s=; summary=
 for c in $(echo "$countries" | tr ',' ' '); do
     s=$(score "$c")
     echo "  $c: ${s}ms"
+    summary="$summary $c:${s}ms,"
     [ "$s" != X ] && { [ -z "$best_s" ] || [ "$s" -lt "$best_s" ]; } && { best=$c; best_s=$s; }
 done
+summary=$(echo "$summary" | sed 's/,$//;s/^ //')
 
-if [ -z "$best" ] || [ "$best" = "$cur_c" ]; then
+if [ -z "$best" ]; then
     rm -f $STATE
-    exit 0
-fi
+    log "$summary | 无可用国家，保持 $cur_c"
+elif [ "$best" = "$cur_c" ]; then
+    rm -f $STATE
+    log "$summary | 保持 $cur_c"
+else
+    # 防抖：连续 2 次同一候选 + margin（current 不可用，或比 best 慢 20%）
+    PENDING=; COUNT=0
+    [ -f $STATE ] && . $STATE
+    [ "$PENDING" = "$best" ] && COUNT=$((COUNT+1)) || { PENDING=$best; COUNT=1; }
 
-# 防抖：连续 2 次同一候选 + margin（current 不可用，或比 best 慢 20%）
-PENDING=; COUNT=0
-[ -f $STATE ] && . $STATE
-[ "$PENDING" = "$best" ] && COUNT=$((COUNT+1)) || { PENDING=$best; COUNT=1; }
-
-if [ $COUNT -ge 2 ]; then
-    margin=0
-    if [ "$cur_s" = X ]; then margin=1
-    elif [ $((cur_s*10)) -ge $((best_s*12)) ]; then margin=1; fi
-    if [ $margin -eq 1 ]; then
-        curl -s -X PUT --max-time 5 \
-            -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
-            -d "{\"name\":\"${best}组\"}" "$API/proxies/$(urlencode "$group")"
-        log "$cur_c(${cur_s}ms) → $best(${best_s}ms)"
-        rm -f $STATE
-        echo "  → 已切换到 $best"
-        exit 0
+    switched=0
+    if [ $COUNT -ge 2 ]; then
+        margin=0
+        if [ "$cur_s" = X ]; then margin=1
+        elif [ $((cur_s*10)) -ge $((best_s*12)) ]; then margin=1; fi
+        if [ $margin -eq 1 ]; then
+            curl -s -X PUT --max-time 5 \
+                -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
+                -d "{\"name\":\"${best}组\"}" "$API/proxies/$(urlencode "$group")"
+            log "$summary | $cur_c(${cur_s}ms) → $best(${best_s}ms)"
+            rm -f $STATE
+            echo "  → 已切换到 $best"
+            switched=1
+        fi
+    fi
+    if [ $switched -eq 0 ]; then
+        echo "PENDING=$PENDING
+COUNT=$COUNT" > $STATE
+        log "$summary | 候选 $best $COUNT/2，暂不切换"
+        echo "  → 候选 $best，连续确认 $COUNT/2，暂不切换"
     fi
 fi
 
-echo "PENDING=$PENDING
-COUNT=$COUNT" > $STATE
-echo "  → 候选 $best，连续确认 $COUNT/2，暂不切换"
+# 日志超 512KB 原地截断保留最后 200KB（inode 不变，mihomo 持续 append 不受影响）
+[ "$(wc -c < $LOG)" -gt 524288 ] && \
+    tail -c 204800 $LOG > $LOG.tmp && cat $LOG.tmp > $LOG && rm -f $LOG.tmp
+exit 0

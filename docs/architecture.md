@@ -53,6 +53,7 @@ scripts/traffic.sh             查看套餐剩余流量/重置/到期（信息�
 /etc/miniclash/config.yaml     生成的 mihomo 配置
 /etc/miniclash/subscribe.yaml  本地上传的订阅（仅日+新 16 节点）
 /etc/miniclash/api_secret      控制 API 密钥（随机生成）
+/etc/miniclash/miniclash.log   运行日志（judge 每轮一行裁决记录；超 512KB 原地保留最后 200KB）
 /var/run/miniclash_watchdog.pid  watchdog 进程号
 /tmp/miniclash_judge.state     judge 防抖状态（PENDING/COUNT）
 ```
@@ -120,6 +121,8 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
 **judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**双目标** `github.com/generate_204` + `google.com/generate_204`（单探针对半死节点有盲区：日本对 Google 系业务 EOF 时 GitHub 探针仍返 204）；国家分 = 最快 2 个双活节点的 GitHub 延迟均值，活节点不足 2 个 = 不可用。
 
 **防抖**（状态 `/tmp/miniclash_judge.state`）：当前国家实时从 select API 读；连续 2 次（10 分钟）同一别国领先、**且**当前国慢 20%（当前国不可用直接满足）才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
+
+**每轮落日志**：judge 每次运行（含未切换）都在 miniclash.log 记一行 `[judge] 新加坡:291ms, 日本:413ms | 保持 新加坡`，巡检直接 grep 回溯；日志超 512KB 原地截断保留最后 200KB，防撑爆闪存（inode 不变，mihomo 持续写入不受影响）。
 
 **为什么不用订阅自带「自动选择」组**：它测 gstatic（`http://www.gstatic.com/generate_204`），而本网络日本 gstatic 全不通（日本出口到 Google 静态 CDN 路由问题），会把日本判死；且组内含香港——香港 GitHub 快但 Claude/ChatGPT 不通。
 
