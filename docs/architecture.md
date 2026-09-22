@@ -53,7 +53,8 @@ scripts/traffic.sh             查看套餐剩余流量/重置/到期（信息�
 /etc/miniclash/config.yaml     生成的 mihomo 配置
 /etc/miniclash/subscribe.yaml  本地上传的订阅（仅日+新 16 节点）
 /etc/miniclash/api_secret      控制 API 密钥（随机生成）
-/etc/miniclash/miniclash.log   运行日志（judge 每轮一行裁决记录；超 512KB 原地保留最后 200KB）
+/etc/miniclash/judge.log       judge 裁决历史（每轮一行；独立轮转保留最后 2500 行 ≈ 8.7 天）
+/etc/miniclash/miniclash.log   内核 warning + init.d 事件（轮转保留最后 800 行）
 /var/run/miniclash_watchdog.pid  watchdog 进程号
 /tmp/miniclash_judge.state     judge 防抖状态（PENDING/COUNT）
 ```
@@ -122,7 +123,7 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
 
 **防抖**（状态 `/tmp/miniclash_judge.state`）：当前国家实时从 select API 读；连续 2 次（10 分钟）同一别国领先、**且**当前国慢 20%（当前国不可用直接满足）才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
 
-**每轮落日志**：judge 每次运行（含未切换）都在 miniclash.log 记一行 `[judge] 新加坡:291ms, 日本:413ms | 保持 新加坡`，巡检直接 grep 回溯；日志超 512KB 原地截断保留最后 200KB，防撑爆闪存（inode 不变，mihomo 持续写入不受影响）。
+**每轮落日志**：judge 每次运行（含未切换）都在独立的 judge.log 记一行 `[judge] 新加坡:291ms, 日本:413ms | 保持 新加坡`，巡检直接 tail 回溯；独立文件避免被量大的内核 warning 冲掉历史。两份日志超 512KB 都按行原地截断（judge.log 留 2500 行 ≈ 8.7 天、miniclash.log 留 800 行），不切半行、inode 不变，防撑爆闪存且不影响 mihomo 持续写入。
 
 **为什么不用订阅自带「自动选择」组**：它测 gstatic（`http://www.gstatic.com/generate_204`），而本网络日本 gstatic 全不通（日本出口到 Google 静态 CDN 路由问题），会把日本判死；且组内含香港——香港 GitHub 快但 Claude/ChatGPT 不通。
 

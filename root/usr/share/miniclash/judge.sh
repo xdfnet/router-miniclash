@@ -5,7 +5,8 @@
 
 WORKDIR=/etc/miniclash
 STATE=/tmp/miniclash_judge.state
-LOG=$WORKDIR/miniclash.log
+JLOG=$WORKDIR/judge.log     # judge 裁决历史（独立文件，不被内核 warning 淹没）
+LOG=$WORKDIR/miniclash.log  # 内核 warning + init.d 事件
 SECRET=$(cat $WORKDIR/api_secret 2>/dev/null)
 API=http://127.0.0.1:9090
 
@@ -13,7 +14,7 @@ T1='https://github.com/generate_204'
 T2='https://www.google.com/generate_204'
 
 get() { uci -q get miniclash.core.$1 2>/dev/null; }
-log() { echo "[$(date '+%F %T')] [judge] $*" >> $LOG; }
+log() { echo "[$(date '+%F %T')] [judge] $*" >> $JLOG; }
 
 # 停用 / 手动 stop 时静默退出
 [ "$(get enabled)" = "1" ] || exit 0
@@ -119,7 +120,11 @@ COUNT=$COUNT" > $STATE
     fi
 fi
 
-# 日志超 512KB 原地截断保留最后 200KB（inode 不变，mihomo 持续 append 不受影响）
-[ "$(wc -c < $LOG)" -gt 524288 ] && \
-    tail -c 204800 $LOG > $LOG.tmp && cat $LOG.tmp > $LOG && rm -f $LOG.tmp
+# 日志轮转：超 512KB 按行原地截断（inode 不变，不切半行，不影响 mihomo 持续 append）
+rotate() {
+    [ "$(wc -c < "$1")" -gt 524288 ] || return 0
+    tail -n "$2" "$1" > "$1.tmp" && cat "$1.tmp" > "$1" && rm -f "$1.tmp"
+}
+rotate $JLOG 2500  # 裁决历史：每轮约 80B，2500 行 ≈ 8.7 天
+rotate $LOG 800    # 内核 warning 量大，800 行 ≈ 200KB
 exit 0

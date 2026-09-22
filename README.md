@@ -56,7 +56,7 @@ config core 'core'
 - 看当前节点：`uci get miniclash.core.node`（watchdog 每周期自动更新）
 - 更新订阅：`./scripts/update-subscribe.sh`（本地拉取 → 过滤日本/新加坡节点 → 上传 → 重启，一条龙）
 - 查套餐：`./scripts/traffic.sh`（剩余流量 / 下次重置 / 套餐到期 / 官网，信息条目藏在订阅里）
-- 看裁决历史：`ssh luyou "grep '\[judge\]' /etc/miniclash/miniclash.log | tail"`（每 5 分钟一行：各国分数 + 保持/候选/切换，日志超 512KB 自动轮转）
+- 看裁决历史：`ssh luyou "tail /etc/miniclash/judge.log"`（独立日志，每 5 分钟一行：各国分数 + 保持/候选/切换；保留约 8.7 天，不被内核 warning 淹没）
 - 日志智能分诊：`./scripts/diagnose.sh`（TypeSafe Jev 判断节点故障 / 故障类型 / 健康度，需 `TYPESAFE_API_KEY` 与 jq；日志自动脱敏后出网）
 - 自动选优：主组「自动优选」是 select 组，成员为新加坡组/日本组两个 url-test 国家组——组内单节点故障内核秒级自愈；整国劣化时 judge.sh 每 5 分钟双探针（GitHub + Google）实测打分，连续 2 次领先 20% 才自动跨国切换，防打地鼠。`node` 由 watchdog 两层展开上报
 
