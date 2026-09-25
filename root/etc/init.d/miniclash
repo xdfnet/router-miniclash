@@ -37,6 +37,19 @@ api_secret() {
 
 is_running() { pidof mihomo >/dev/null 2>&1; }
 
+# 开机时 WAN 可能尚未就绪，轮询最多 30 秒等拿到 IP（手动重启时立即返回）
+wait_wan() {
+    . /lib/functions/network.sh 2>/dev/null
+    local i=0 wan ip
+    while [ $i -lt 30 ]; do
+        network_find_wan wan 2>/dev/null
+        network_get_ipaddr ip "$wan" 2>/dev/null
+        [ -n "$ip" ] && return 0
+        sleep 1; i=$((i+1))
+    done
+    log "警告: 等待 WAN IP 超时（30s），继续启动"
+}
+
 # ---------- 1. 生成运行时配置 ----------
 # 头部由我们控制（端口/DNS/API），订阅只取 proxies: 起的部分
 # （保留订阅自带的 proxy-groups 与 rules，丢掉其 port/dns 段）
@@ -240,6 +253,11 @@ start() {
     # 订阅由本地 scripts/update-subscribe.sh 上传（路由器不下载）
     [ -f $SUBSCRIBE ] || { log "订阅不存在：请在 Mac 运行 ./scripts/update-subscribe.sh"; return 1; }
     gen_config || return 1
+    wait_wan
+
+    # 确保本地 MMDB 在位，避免 mihomo 运行时因文件缺失去联网下载（开机 WAN 未通即 fatal）
+    [ -s $WORKDIR/Country.mmdb ] || \
+        cp -f $ROOTDIR/etc/miniclash/Country.mmdb $WORKDIR/Country.mmdb 2>/dev/null
 
     # 校验 GeoIP 库：mihomo -t 真实试读，大小正常但内容损坏也能发现（F2FS 写坏的死法）
     # install.sh 已备份到 /usr/share/miniclash/；损坏/缺失时从备份恢复，再验一次仍坏则中止启动

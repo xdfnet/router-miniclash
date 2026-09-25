@@ -75,11 +75,13 @@ start()
  1. 校验 enabled 且内核存在、可执行
  2. 校验 subscribe.yaml —— 由 Mac update-subscribe.sh 上传（缺失即报错退出）
  3. gen_config —— 头部 + 组生成 + 规则注入 → config.yaml
- 4. 启动内核（后台）
- 5. start_watchdog —— 后台上报循环（两层展开实际节点 → 落盘 uci node）
- 6. ipt_start + dns_start —— 建立透明代理劫持与 DNS 联动
- 7. 关闭 WAN GSO/TSO —— 隧道内 TLS record 超 MSS 被网卡合并大包、中间设备丢前段（配合指纹注入）
- 8. 幂等安装 judge cron —— 每 5 分钟跨国裁决
+ 4. wait_wan —— 轮询最多 30s 等 WAN 拿到 IP（治开机时序竞争；手动重启立即返回零开销）
+ 5. 确保本地 MMDB 在位（缺失先从备份补）→ mihomo -t 真实试读，损坏再从备份恢复
+ 6. 启动内核（后台）
+ 7. start_watchdog —— 后台上报循环（两层展开实际节点 → 落盘 uci node）
+ 8. ipt_start + dns_start —— 建立透明代理劫持与 DNS 联动
+ 9. 关闭 WAN GSO/TSO —— 隧道内 TLS record 超 MSS 被网卡合并大包、中间设备丢前段（配合指纹注入）
+10. 幂等安装 judge cron —— 每 5 分钟跨国裁决
 ```
 
 ## 配置生成（gen_config）四个要点
@@ -153,3 +155,4 @@ watchdog 不驱动切换——组内切换交给内核、跨国切换交给 judg
 | 无指纹节点注入 `client-fingerprint: firefox` | 默认指纹 ClientHello 超 MSS，路由器 GSO 合并大包被中间设备丢前段 → 握手超时（2026-09-01 拨号全灭根因）；firefox 指纹包小单段不分片 |
 | 关闭 WAN GSO/TSO | 隧道内 TLS record 超 MSS 被网卡合并大包、中间设备丢前段，配合指纹注入根治大数据传输间歇失败 |
 | watchdog 只上报不切换 | 组内切换交给内核、跨国交给 judge，脚本仅两层展开记录当前节点供查看 |
+| 开机 wait_wan + 启动前确保 MMDB 在位 | 2026-09-25 冷启动时 WAN/MMDB 未就绪，mihomo 运行时联网下 MMDB 失败反复 fatal（折腾 15 分钟）；先就绪再拉起，一次成功 |
