@@ -2,6 +2,7 @@
 # judge — 跨国线路自动裁决（cron 每 5 分钟）
 # 对每国节点实测 github + google 双目标；国家分 = 最快 2 个活节点延迟均值；
 # 连续 2 次别国领先 20% 才经 API 切换 select 主组——双确认 + margin，防打地鼠横跳。
+# BOOT=1：开机/重启模式，测一次直接进最优国（绕过双确认），由 init.d start() 调用。
 
 WORKDIR=/etc/miniclash
 STATE=/tmp/miniclash_judge.state
@@ -92,31 +93,41 @@ elif [ "$best" = "$cur_c" ]; then
     rm -f $STATE
     log "$summary | 保持 $cur_c"
 else
-    # 防抖：连续 2 次同一候选 + margin（current 不可用，或比 best 慢 20%）
-    PENDING=; COUNT=0
-    [ -f $STATE ] && . $STATE
-    [ "$PENDING" = "$best" ] && COUNT=$((COUNT+1)) || { PENDING=$best; COUNT=1; }
+    if [ "$BOOT" = 1 ]; then
+        # 开机模式：select 默认国家是任意的，测一次直接进最优国，不走防抖
+        curl -s -X PUT --max-time 5 \
+            -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
+            -d "{\"name\":\"${best}组\"}" "$API/proxies/$(urlencode "$group")"
+        log "$summary | 开机直选 $best(${best_s}ms)"
+        rm -f $STATE
+        echo "  → 开机直选 $best"
+    else
+        # 防抖：连续 2 次同一候选 + margin（current 不可用，或比 best 慢 20%）
+        PENDING=; COUNT=0
+        [ -f $STATE ] && . $STATE
+        [ "$PENDING" = "$best" ] && COUNT=$((COUNT+1)) || { PENDING=$best; COUNT=1; }
 
-    switched=0
-    if [ $COUNT -ge 2 ]; then
-        margin=0
-        if [ "$cur_s" = X ]; then margin=1
-        elif [ $((cur_s*10)) -ge $((best_s*12)) ]; then margin=1; fi
-        if [ $margin -eq 1 ]; then
-            curl -s -X PUT --max-time 5 \
-                -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
-                -d "{\"name\":\"${best}组\"}" "$API/proxies/$(urlencode "$group")"
-            log "$summary | $cur_c(${cur_s}ms) → $best(${best_s}ms)"
-            rm -f $STATE
-            echo "  → 已切换到 $best"
-            switched=1
+        switched=0
+        if [ $COUNT -ge 2 ]; then
+            margin=0
+            if [ "$cur_s" = X ]; then margin=1
+            elif [ $((cur_s*10)) -ge $((best_s*12)) ]; then margin=1; fi
+            if [ $margin -eq 1 ]; then
+                curl -s -X PUT --max-time 5 \
+                    -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
+                    -d "{\"name\":\"${best}组\"}" "$API/proxies/$(urlencode "$group")"
+                log "$summary | $cur_c(${cur_s}ms) → $best(${best_s}ms)"
+                rm -f $STATE
+                echo "  → 已切换到 $best"
+                switched=1
+            fi
         fi
-    fi
-    if [ $switched -eq 0 ]; then
-        echo "PENDING=$PENDING
+        if [ $switched -eq 0 ]; then
+            echo "PENDING=$PENDING
 COUNT=$COUNT" > $STATE
-        log "$summary | 候选 $best $COUNT/2，暂不切换"
-        echo "  → 候选 $best，连续确认 $COUNT/2，暂不切换"
+            log "$summary | 候选 $best $COUNT/2，暂不切换"
+            echo "  → 候选 $best，连续确认 $COUNT/2，暂不切换"
+        fi
     fi
 fi
 

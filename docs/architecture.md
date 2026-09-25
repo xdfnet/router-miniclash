@@ -82,6 +82,7 @@ start()
  8. ipt_start + dns_start —— 建立透明代理劫持与 DNS 联动
  9. 关闭 WAN GSO/TSO —— 隧道内 TLS record 超 MSS 被网卡合并大包、中间设备丢前段（配合指纹注入）
 10. 幂等安装 judge cron —— 每 5 分钟跨国裁决
+11. BOOT=1 前台跑一次 judge —— 实测打分直接进当前最优国家（开机直选，绕过双确认；约 6s）
 ```
 
 ## 配置生成（gen_config）四个要点
@@ -124,6 +125,8 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
 **judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**双目标** `github.com/generate_204` + `google.com/generate_204`（单探针对半死节点有盲区：日本对 Google 系业务 EOF 时 GitHub 探针仍返 204）；国家分 = 最快 2 个双活节点的 GitHub 延迟均值，活节点不足 2 个 = 不可用。
 
 **防抖**（状态 `/tmp/miniclash_judge.state`）：当前国家实时从 select API 读；连续 2 次（10 分钟）同一别国领先、**且**当前国慢 20%（当前国不可用直接满足）才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
+
+**开机直选（BOOT 模式）**：select 启动默认固定选第一个成员（新加坡），并非实时最优。init.d start() 末尾以 `BOOT=1` 前台跑一次 judge，绕过双确认、按实测分数直接 PUT 进最优国家（约 6s）；若两国都不可用则安全保持默认。cron 常规轮次不带 BOOT，防抖不变。
 
 **每轮落日志**：judge 每次运行（含未切换）都在独立的 judge.log 记一行 `[judge] 新加坡:291ms, 日本:413ms | 保持 新加坡`，巡检直接 tail 回溯；独立文件避免被量大的内核 warning 冲掉历史。两份日志超 512KB 都按行原地截断（judge.log 留 2500 行 ≈ 8.7 天、miniclash.log 留 800 行），不切半行、inode 不变，防撑爆闪存且不影响 mihomo 持续写入。
 
