@@ -241,11 +241,16 @@ start() {
     [ -f $SUBSCRIBE ] || { log "订阅不存在：请在 Mac 运行 ./scripts/update-subscribe.sh"; return 1; }
     gen_config || return 1
 
-    # 校验 GeoIP 库完整性（install.sh 已备份到 /usr/share/miniclash/ 防 F2FS 丢文件）
-    if [ ! -s $WORKDIR/Country.mmdb ] || [ "$(wc -c < $WORKDIR/Country.mmdb 2>/dev/null)" -lt 1048576 ]; then
+    # 校验 GeoIP 库：mihomo -t 真实试读，大小正常但内容损坏也能发现（F2FS 写坏的死法）
+    # install.sh 已备份到 /usr/share/miniclash/；损坏/缺失时从备份恢复，再验一次仍坏则中止启动
+    if ! $BIN -t -d $WORKDIR -f $CONFIG >/dev/null 2>&1; then
         log "GeoIP 库异常或缺失，从备份恢复"
         cp -f /usr/share/miniclash/etc/miniclash/Country.mmdb $WORKDIR/Country.mmdb 2>/dev/null || {
             log "错误: GeoIP 库恢复失败（备份也不存在），请运行 install.sh"
+            return 1
+        }
+        $BIN -t -d $WORKDIR -f $CONFIG >/dev/null 2>&1 || {
+            log "错误: 备份 GeoIP 库也无效，请运行 install.sh"
             return 1
         }
     fi

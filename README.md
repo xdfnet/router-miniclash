@@ -132,7 +132,8 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 |------|------|
 | 海外全不通，日志 `context deadline exceeded` | iptables 本机出站被劫持成自环 → 重跑 `./scripts/install.sh` |
 | 海外域名解析成假 IP、fake-ip 不生效 | dnsmasq 需 `restart`（`reload` 不重读 `/tmp/dnsmasq.d/`） |
-| 重启后内核 / 订阅消失 | F2FS 恢复吞文件 → 内核重跑 `install.sh`；订阅重跑 `./scripts/update-subscribe.sh` |
+| 重启后内核 / 订阅消失 | F2FS 吞文件 → 内核重跑 `install.sh`；订阅重跑 `./scripts/update-subscribe.sh` |
+| 启动失败，日志 `MMDB invalid` | GeoIP 库被 F2FS 写坏（大小可能正常）→ 启动前 `mihomo -t` 已拦截并自动从备份恢复；备份也坏才需重跑 `install.sh` |
 | 某线路到个别站点不通（如日本 → gstatic） | 换**线路**（日本/香港/台湾…），同线路换节点无效（共用一个出口） |
 | 整国线路劣化（如日本全部节点 EOF / 高延迟） | judge 最多 10 分钟自动切到别国；急时手动切：在路由器执行 `curl -X PUT -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" -H 'Content-Type: application/json' -d '{"name":"新加坡组"}' http://127.0.0.1:9090/proxies/自动优选` |
 | iPhone / Apple 推送不通（`push.apple.com` 直连超时） | 订阅 `apple.com,DIRECT` 把 APNs 兜成直连而本网络连不上 Apple → init.d 已自动在 rules 最前注入 `push.apple.com → 自动优选`，重启生效 |
@@ -146,7 +147,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 - [x] 自动选优：select 主组 + 国家 url-test 组（组内秒级自愈；judge 每 5 分钟双探针跨国裁决，双确认 + 20% margin 防抖）
 - [x] watchdog 两层展开上报当前实际节点到 uci（select → 国家组 → 节点）
 - [x] 大陆 `GEOIP,CN,DIRECT` 直连
-- [x] 内核 + GeoIP 库内置，update-kernel.sh 一条命令更新（含 MD5 校验防损坏），F2FS 丢文件 `install.sh` 恢复
+- [x] 内核 + GeoIP 库内置，update-kernel.sh 一条命令更新（含 MD5 校验）；启动前 `mihomo -t` 内容校验，F2FS 写坏/丢文件自动从备份恢复
 - [x] 真机验证：google / youtube / github 通，大陆直连
 - [ ] UDP（TPROXY）— 暂不做，TCP 够日常使用
 
