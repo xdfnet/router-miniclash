@@ -11,7 +11,7 @@
   │ UCI 配置 → init.d start()                            │
   │   ├─ gen_config()   头部 + 组生成 + 规则注入          │
   │   ├─ start_watchdog() 每 60s 上报当前节点 → uci      │
-  │   ├─ judge.sh cron  每 5min 双探针打分 → 跨国裁决    │
+  │   ├─ judge.sh cron  每 5min 双地址打分 → 跨国裁决    │
   │   └─ ipt_start / dns_start  建立劫持与 DNS          │
   └──────────────┬──────────────────────┬──────────────┘
                  │ REST API (9090)      │ 写配置文件
@@ -41,7 +41,7 @@ root/etc/config/miniclash      UCI 配置（唯一配置源）
 root/etc/init.d/miniclash      全部逻辑（生成/劫持/守护）
 root/etc/miniclash/Country.mmdb GeoIP 库（内置，损坏自动重灌）
 root/usr/bin/mihomo            内核二进制（内置）
-root/usr/share/miniclash/judge.sh 跨国裁决（cron 每 5 分钟，双探针 + 防抖）
+root/usr/share/miniclash/judge.sh 跨国裁决（cron 每 5 分钟，双地址相加 + 防抖）
 scripts/install.sh             root/ → 路由器 / 同步（不覆盖 UCI 配置）
 scripts/update-kernel.sh       更新内置内核 + GeoIP（--deploy 同步并重启）
 scripts/uninstall.sh           彻底卸载
@@ -122,7 +122,7 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
 
 主组「自动优选」是 **select** 组，成员是各**国家 url-test 组**（新加坡组/日本组/美国组）。国家组每 60s 测 `github.com/generate_204` 选组内延迟最优（`tolerance: 500` 防组内噪声横跳）——单节点故障内核秒级自愈，脚本不干预。
 
-**judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**双目标** `github.com/generate_204` + `google.com/generate_204`（单探针对半死节点有盲区：日本对 Google 系业务 EOF 时 GitHub 探针仍返 204）；国家分 = 最快 2 个双活节点的 GitHub 延迟均值，活节点不足 2 个 = 不可用。
+**judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**两个真实地址** `github.com/generate_204`（主站，返 204）+ `github.githubassets.com/generate_204`（GitHub 网页静态资源走的 Fastly 链路，返 404 但握手成功、照样计时，调 delay API 时传 `expected-status=404`）；**节点分 = 两地址延迟相加**——锚点贴合浏览器真实加载，能区分各国到 Fastly 那跳的快慢。国家分 = 最快 2 个活节点的节点分均值，活节点不足 2 个 = 不可用。
 
 **防抖**（状态 `/tmp/miniclash_judge.state`）：当前国家实时从 select API 读；连续 2 次（10 分钟）同一别国领先、**且**当前国慢 20%（当前国不可用直接满足）才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
 
@@ -152,7 +152,7 @@ watchdog 不驱动切换——组内切换交给内核、跨国切换交给 judg
 | select 主组 + 国家 url-test 两层结构 | 单节点故障组内核秒级自愈；整国劣化 judge 裁决可跨国逃生（2026-09-21 旧 fallback 同国备用池无法逃生） |
 | judge 双确认 + 20% margin 才跨国切换 | 杜绝"打地鼠"切换风暴（2026-08-18 教训）与测速噪声误判；最坏 10 分钟延迟 |
 | 国家 url-test 加 `tolerance: 500` | 组内节点延迟接近且波动，须领先 500ms 才切，压住无效切换 |
-| judge 双探针（GitHub + Google） | 单探针对半死节点有盲区（GitHub 返 204、Google 业务 EOF），双目标任一失败即判死 |
+| judge 双地址相加（GitHub主站 + githubassets/Fastly） | 单看主站探不到 Fastly 那跳的真实差距；两地址都活才把延迟相加，任一失败不计入 |
 | 自动优选组按国家归集 + GitHub 判据 | 避开订阅「自动选择」组的 gstatic 陷阱（判死日本）与香港（Claude 不通） |
 | 海外被 DIRECT 兜底的服务注入代理 | 订阅把 apple.com / 微软域名兜成 DIRECT，本网络直连海外不通（实测超时），故在 rules 最前注入走代理 |
 | 无指纹节点注入 `client-fingerprint: firefox` | 默认指纹 ClientHello 超 MSS，路由器 GSO 合并大包被中间设备丢前段 → 握手超时（2026-09-01 拨号全灭根因）；firefox 指纹包小单段不分片 |

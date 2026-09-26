@@ -143,7 +143,7 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
     url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }
 ```
 
-行为：国家组内单节点劣化 **60s 内自动切**（tolerance 500ms 防组内噪声）；整国劣化由 judge 双探针实测、**双确认 + 20% margin** 后切国家组（见 architecture.md「自动选优」）。2026-09-01 拨号事故见 [事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
+行为：国家组内单节点劣化 **60s 内自动切**（tolerance 500ms 防组内噪声）；整国劣化由 judge 对 GitHub 主站 + githubassets 双地址（都活才）计时相加实测、**双确认 + 20% margin** 后切国家组（见 architecture.md「自动选优」）。2026-09-01 拨号事故见 [事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
 
 **验证**：
 ```sh

@@ -58,7 +58,7 @@ config core 'core'
 - 查套餐：`./scripts/traffic.sh`（剩余流量 / 下次重置 / 套餐到期 / 官网，信息条目藏在订阅里）
 - 看裁决历史：`ssh luyou "tail /etc/miniclash/judge.log"`（独立日志，每 5 分钟一行：各国分数 + 保持/候选/切换；保留约 8.7 天，不被内核 warning 淹没）
 - 日志智能分诊：`./scripts/diagnose.sh`（TypeSafe Jev 判断节点故障 / 故障类型 / 健康度，需 `TYPESAFE_API_KEY` 与 jq；日志自动脱敏后出网）
-- 自动选优：主组「自动优选」是 select 组，成员为新加坡组/日本组/美国组三个 url-test 国家组——组内单节点故障内核秒级自愈；整国劣化时 judge.sh 每 5 分钟双探针（GitHub + Google）实测打分，连续 2 次领先 20% 才自动跨国切换，防打地鼠。`node` 由 watchdog 两层展开上报
+- 自动选优：主组「自动优选」是 select 组，成员为新加坡组/日本组/美国组三个 url-test 国家组——组内单节点故障内核秒级自愈；整国劣化时 judge.sh 每 5 分钟对 GitHub 主站 + githubassets(Fastly) 两个地址计时相加、谁总分短选谁，连续 2 次领先 20% 才自动跨国切换，防打地鼠。`node` 由 watchdog 两层展开上报
 
 ## 节点怎么自动切换（两层，互不干扰）
 
@@ -76,7 +76,7 @@ config core 'core'
 |---|---|---|
 | 谁做 | mihomo 内核 `url-test` | `judge.sh`（cron） |
 | 频率 | 每 **60 秒** | 每 **5 分钟** |
-| 怎么判 | 测 GitHub，选延迟最低 | 双探针 GitHub + Google 打分 |
+| 怎么判 | 测 GitHub，选延迟最低 | GitHub主站+githubassets 两地址计时相加 |
 | 防抖 | 领先 500ms 才切 | 连续 **2 次**领先 **且**当前国慢 **20%** 才切 |
 | 应对 | 单节点挂了 → 秒级自愈 | 整国劣化 → 换国家逃生 |
 
@@ -115,7 +115,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 - `default-nameserver`：bootstrap，解析 DNS 服务器自身的域名
 
 **④ 跨国自动选优**（`external-controller: 9090` + `secret`）
-主组「自动优选」是 **select** 组，成员为每国一个 **url-test** 组（新加坡组/日本组/美国组，每 60s 测 GitHub 选组内最优，tolerance 500ms 防抖）——单节点故障组内秒级自愈。国家级劣化由 `/usr/share/miniclash/judge.sh`（cron 每 5 分钟）裁决：对每节点实测 GitHub + Google **双目标**（单探针对半死节点有盲区：探针返 204、业务却 EOF），国家分 = 最快 2 个活节点延迟均值；连续 2 次同一别国领先且当前国慢 20%（当前国不可用直接满足）才经 API `PUT` 切换 select——双确认 + margin 防横跳。watchdog 只做两层展开（select → 国家组 → 节点）把实际节点落盘 `node`，不驱动切换。
+主组「自动优选」是 **select** 组，成员为每国一个 **url-test** 组（新加坡组/日本组/美国组，每 60s 测 GitHub 选组内最优，tolerance 500ms 防抖）——单节点故障组内秒级自愈。国家级劣化由 `/usr/share/miniclash/judge.sh`（cron 每 5 分钟）裁决：对每节点实测两个真实地址 `github.com/generate_204` + `github.githubassets.com/generate_204`（后者是 GitHub 网页静态资源走的 Fastly 链路，返回 404 但握手成功、照样计时），**节点分 = 两地址延迟相加**，国家分 = 最快 2 个活节点的节点分均值；连续 2 次同一别国领先且当前国慢 20%（当前国不可用直接满足）才经 API `PUT` 切换 select——双确认 + margin 防横跳。watchdog 只做两层展开（select → 国家组 → 节点）把实际节点落盘 `node`，不驱动切换。
 
 **⑤ 订阅本地过滤 + YAML 直通**
 订阅地址存在于项目根 `subscription.url`：Mac 本地拉取（base64 自动解码）后过滤 `proxies:` 段，仅保留日本/新加坡/美国 20 个节点（信息伪装条目同步剔除），订阅自带 proxy-groups 段整段删除，再上传路由器。rules（含 `GEOIP,CN,DIRECT` 大陆直连）原样保留，节点与规则由内核原生解析，不翻译任何协议；MiniClash 只覆盖端口 / DNS / API 三块头部。所有规则走「自动优选」。
@@ -147,7 +147,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 - [x] 无界面纯配置：4 个 UCI 字段 + 单 init.d + 1 条命令部署
 - [x] 订阅本地更新（拉取/base64 检测/过滤日+新+美 20 节点/上传/重启，路由器不保存订阅地址）
 - [x] fake-ip + DoH 防污染 + 节点域名走真实 DNS 防环路
-- [x] 自动选优：select 主组 + 国家 url-test 组（组内秒级自愈；judge 每 5 分钟双探针跨国裁决，双确认 + 20% margin 防抖）
+- [x] 自动选优：select 主组 + 国家 url-test 组（组内秒级自愈；judge 每 5 分钟双地址相加跨国裁决，双确认 + 20% margin 防抖）
 - [x] watchdog 两层展开上报当前实际节点到 uci（select → 国家组 → 节点）
 - [x] 大陆 `GEOIP,CN,DIRECT` 直连
 - [x] 内核 + GeoIP 库内置，update-kernel.sh 一条命令更新（含 MD5 校验）；启动前 `mihomo -t` 内容校验，F2FS 写坏/丢文件自动从备份恢复

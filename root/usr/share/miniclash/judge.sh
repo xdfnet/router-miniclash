@@ -1,6 +1,7 @@
 #!/bin/sh
 # judge — 跨国线路自动裁决（cron 每 5 分钟）
-# 对每国节点实测 github + google 双目标；国家分 = 最快 2 个活节点延迟均值；
+# 对每国节点实测 GitHub 主站 + githubassets(Fastly) 两地址，节点分 = 两地址延迟相加；
+# 国家分 = 最快 2 个活节点的节点分均值；
 # 连续 2 次别国领先 20% 才经 API 切换 select 主组——双确认 + margin，防打地鼠横跳。
 # BOOT=1：开机/重启模式，测一次直接进最优国（绕过双确认），由 init.d start() 调用。
 
@@ -12,7 +13,7 @@ SECRET=$(cat $WORKDIR/api_secret 2>/dev/null)
 API=http://127.0.0.1:9090
 
 T1='https://github.com/generate_204'
-T2='https://www.google.com/generate_204'
+T2='https://github.githubassets.com/generate_204'
 
 get() { uci -q get miniclash.core.$1 2>/dev/null; }
 log() { echo "[$(date '+%F %T')] [judge] $*" >> $JLOG; }
@@ -37,10 +38,10 @@ urlencode() {
     echo "$out"
 }
 
-# probe <节点> <目标> → 延迟 ms；失败空串
+# probe <节点> <目标> <期望状态码> → 延迟 ms；失败空串
 probe() {
     curl -s --max-time 6 -H "Authorization: Bearer $SECRET" \
-        "$API/proxies/$(urlencode "$1")/delay?url=$(urlencode "$2")&timeout=5000" \
+        "$API/proxies/$(urlencode "$1")/delay?url=$(urlencode "$2")&timeout=5000&expected-status=$3" \
         | grep -oE '"delay":[0-9]+' | cut -d: -f2
 }
 
@@ -52,20 +53,20 @@ TMPD=/tmp/miniclash_judge.$$
 mkdir -p $TMPD
 trap 'rm -rf $TMPD' EXIT
 
-# 每节点并发双目标探测，结果: 国家|节点|github延迟|google延迟（X=失败）
+# 每节点并发双地址探测，结果: 国家|节点|主站延迟|assets延迟（X=失败）
 for c in $(echo "$countries" | tr ',' ' '); do
     for n in $all_names; do
         case "$n" in "$c"*)
-            ( d1=$(probe "$n" "$T1"); d2=$(probe "$n" "$T2")
+            ( d1=$(probe "$n" "$T1" 204); d2=$(probe "$n" "$T2" 404)
               echo "$c|$n|${d1:-X}|${d2:-X}" >> $TMPD/results ) &
         ;; esac
     done
 done
 wait
 
-# score <国家> → 最快 2 活节点延迟均值；活节点不足 2 个 = X（不可用）
+# score <国家> → 最快 2 活节点的(两地址)总分均值；活节点不足 2 个 = X（不可用）
 score() {
-    awk -F'|' -v c="$1" '$1==c && $3!="X" && $4!="X"{print $3}' $TMPD/results \
+    awk -F'|' -v c="$1" '$1==c && $3!="X" && $4!="X"{print $3+$4}' $TMPD/results \
         | sort -n | head -2 \
         | awk '{s+=$1;n++} END{if(n>=2) printf "%d",s/2; else print "X"}'
 }
