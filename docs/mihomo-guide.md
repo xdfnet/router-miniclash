@@ -104,7 +104,7 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 | 类型 | 官方语义 | MiniClash |
 |------|----------|-----------|
 | `select` | 手动选择，默认选第一个（或 `default-selected`） | ✅ 主组「自动优选」（judge 经 API 裁决国家） |
-| `url-test` | 定时测速，**自动选延迟最优** | ✅ 国家组「新加坡组」「日本组」 |
+| `url-test` | 定时测速，**自动选延迟最优** | ✅ 国家组「新加坡组」「日本组」「美国组」 |
 | `fallback` | 当前节点超时，**按顺序选第一个可用** | 未用 |
 | `load-balance` | 负载均衡：`round-robin` / `consistent-hashing` / `sticky-sessions` | 未用 |
 | `relay` | 链路代理（如 A→B→C 级联） | 未用 |
@@ -115,7 +115,7 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 
 | 字段 | 官方语义 | MiniClash 值 |
 |------|----------|-------------|
-| `name` | 组名，特殊符号需引号 | `自动优选` / `新加坡组` / `日本组` |
+| `name` | 组名，特殊符号需引号 | `自动优选` / `新加坡组` / `日本组` / `美国组` |
 | `type` | 组类型 | `select` / `url-test` |
 | `proxies` | 引入出站代理或其他策略组 | select 引入国家组；国家组引入节点 |
 | `use` | 引入代理集合（proxy-providers） | 未用（节点走订阅 `proxies:`） |
@@ -133,11 +133,13 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 
 ```yaml
 # select 主组：成员为国家组，judge 经 API 裁决
-- { name: 自动优选, type: select, proxies: ['新加坡组','日本组'] }
-# 国家组：组内 url-test 择优（新加坡8节点、日本8节点，节点本地过滤后上传）
+- { name: 自动优选, type: select, proxies: ['新加坡组','日本组','美国组'] }
+# 国家组：组内 url-test 择优（新加坡8节点、日本8节点、美国4节点，节点本地过滤后上传）
 - { name: 新加坡组, type: url-test, proxies: ['新加坡1',…,'新加坡8'],
     url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }
 - { name: 日本组, type: url-test, proxies: ['日本1',…,'日本8'],
+    url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }
+- { name: 美国组, type: url-test, proxies: ['美国1',…,'美国4'],
     url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }
 ```
 

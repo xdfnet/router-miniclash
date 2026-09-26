@@ -114,7 +114,7 @@ gen_config() {
         # 订阅节点名带国家前缀（日本1~8、新加坡1~8…），按 countries 归集；伪装信息条目不匹配任何前缀自动排除
         group=${group:-自动优选}
         # 参与裁决的国家（有序，第 1 个为 select 默认；单一场景固化，节点按订阅名前缀归集）
-        countries=新加坡,日本
+        countries=新加坡,日本,美国
         all_names=$(awk '/^proxies:/{p=1;next}/^[a-z-]+:/{p=0}p' $SUBSCRIBE \
             | grep -oE "name: [^,}]+" | sed "s/name: //; s/^'//; s/'$//")
         group_names=""
