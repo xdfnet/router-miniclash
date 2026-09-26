@@ -133,7 +133,7 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 
 ```yaml
 # select 主组：成员为国家组，judge 经 API 裁决
-- { name: 自动优选, type: select, proxies: ['新加坡组','日本组','美国组'] }
+- { name: 自动优选, type: select, proxies: ['日本组','新加坡组','美国组'] }
 # 国家组：组内 url-test 择优（新加坡8节点、日本8节点、美国4节点，节点本地过滤后上传）
 - { name: 新加坡组, type: url-test, proxies: ['新加坡1',…,'新加坡8'],
     url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }

@@ -89,8 +89,8 @@ start()
 
 **① 头部自有，节点/规则直通**：端口 / DNS / API 三块由脚本写死；上传订阅的 proxies（仅日+新+美 20 节点）与 rules 原样交给内核，订阅自带的 port/dns 等段 awk 不输出——保证运行时行为可预期。
 
-**② 自动优选组（select + 国家 url-test）**：从上传订阅提取节点名（过滤在本地完成），按固化国家顺序（新加坡,日本,美国）以前缀归集，在 rules 段前生成——
-- select 主组：`{ name: 自动优选, type: select, proxies: ['新加坡组','日本组','美国组'] }`
+**② 自动优选组（select + 国家 url-test）**：从上传订阅提取节点名（过滤在本地完成），按固化国家顺序（日本,新加坡,美国）以前缀归集，在 rules 段前生成——
+- select 主组：`{ name: 自动优选, type: select, proxies: ['日本组','新加坡组','美国组'] }`
 - 每国一个 url-test 组：`{ name: 新加坡组, type: url-test, proxies: [新加坡1…], url: 'github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }`
 
 健康检查用 `expected-status: 200/204`：只认真实 204（generate_204 固定返回），防运营商劫持返回假 200 被误判为节点健康。
