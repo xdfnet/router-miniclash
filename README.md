@@ -26,10 +26,10 @@ config core 'core'
 ## 部署
 
 ```bash
-./scripts/install.sh        # 一键安装到路由器（内置内核+GeoIP库，不覆盖已有配置）
-./scripts/update-kernel.sh  # 更新内置 mihomo 内核 + GeoIP 库（加 --deploy 同步并重启）
+./scripts/install.sh        # 一键安装到路由器（缺内核/GeoIP 时自动下载，不覆盖已有配置）
+./scripts/update-kernel.sh  # 下载/更新 mihomo 内核 + GeoIP 库（加 --deploy 同步并重启）
 ./scripts/uninstall.sh      # 彻底卸载
-./scripts/update-subscribe.sh # 本地拉订阅过滤日/新/美节点后上传（install 自动执行一次）
+./scripts/update-subscribe.sh # 本地拉订阅过滤日/新节点后上传（install 自动执行一次）
 ./scripts/traffic.sh        # 查看套餐剩余流量 / 重置 / 到期
 ```
 
@@ -43,11 +43,11 @@ config core 'core'
 ### 更新内核与 GeoIP 库
 
 ```bash
-./scripts/update-kernel.sh            # 仅更新项目内置文件
+./scripts/update-kernel.sh            # 仅下载/更新到项目 root/
 ./scripts/update-kernel.sh --deploy   # 更新后同步到路由器并重启服务
 ```
 
-自动对比 mihomo 最新 release，版本相同则跳过内核；GeoIP 库（country.mmdb）每次拉最新。默认 linux-arm64（mt7981 路由器），可用 `PLATFORM=xxx` 覆盖。
+内核 `/usr/bin/mihomo`（55M）与 GeoIP 库 `Country.mmdb`（8M）**不入库**（见 `.gitignore`），新克隆仓库里没有这两个文件——直接跑 `install.sh` 会自动调用 `update-kernel.sh` 下载补齐。自动对比 mihomo 最新 release，版本相同则跳过内核；GeoIP 库（country.mmdb）每次拉最新。默认 linux-arm64（mt7981 路由器），可用 `PLATFORM=xxx` 覆盖。
 
 ## 日常使用
 
@@ -150,7 +150,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 - [x] 自动选优：select 主组 + 国家 url-test 组（组内秒级自愈；judge 每 5 分钟双地址相加跨国裁决，双确认 + 20% margin 防抖）
 - [x] watchdog 两层展开上报当前实际节点到 uci（select → 国家组 → 节点）
 - [x] 大陆 `GEOIP,CN,DIRECT` 直连
-- [x] 内核 + GeoIP 库内置，update-kernel.sh 一条命令更新（含 MD5 校验）；启动前 `mihomo -t` 内容校验，F2FS 写坏/丢文件自动从备份恢复
+- [x] 内核 + GeoIP 库不入库（体积原因），update-kernel.sh 一条命令下载/更新（含 MD5 校验），install.sh 缺失时自动补齐；启动前 `mihomo -t` 内容校验，F2FS 写坏/丢文件自动从备份恢复
 - [x] 真机验证：google / youtube / github 通，大陆直连
 - [ ] UDP（TPROXY）— 暂不做，TCP 够日常使用
 

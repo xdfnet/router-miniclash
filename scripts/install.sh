@@ -6,6 +6,12 @@ set -e
 ROUTER="${1:-luyou}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# 内核 / GeoIP 库不入库（见 .gitignore），首次部署或新克隆后需按需下载
+if [ ! -f "$ROOT/root/usr/bin/mihomo" ] || [ ! -f "$ROOT/root/etc/miniclash/Country.mmdb" ]; then
+    echo "==> 本地缺少内核/GeoIP 库，先下载"
+    "$ROOT/scripts/update-kernel.sh"
+fi
+
 echo "==> 同步系统文件 (root/ → /，绝不覆盖 UCI 配置)"
 FILES=$(cd "$ROOT/root" && find . -type f ! -path './etc/config/*' ! -name '.DS_Store')
 tar -C "$ROOT/root" -czf - $FILES | ssh "$ROUTER" 'tar -C / -xzf -'
