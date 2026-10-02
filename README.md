@@ -33,7 +33,7 @@ config core 'core'
 ./scripts/traffic.sh        # 查看套餐剩余流量 / 重置 / 到期
 ```
 
-订阅地址在项目根 `subscription.url`（一行），改地址只需改这一个文件。首次安装后直接启用（模板已 `enabled=1`）：
+目标路由器通过 `ssh luyou` 访问（`192.168.100.1`，详见[运行环境与访问方式](docs/environment.md)），脚本均已内置该别名。订阅地址在项目根 `subscription.url`（一行），改地址只需改这一个文件。首次安装后直接启用（模板已 `enabled=1`）：
 
 ```bash
 /etc/init.d/miniclash enable
@@ -165,6 +165,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 
 ## 相关文档
 
+- [运行环境与访问方式](docs/environment.md) — 路由器连接方式、网络拓扑、端口与常用巡检命令
 - [架构说明](docs/architecture.md) — 目录结构、运行时文件、调用链路
 - [mihomo 指南](docs/mihomo-guide.md) — 内核各能力的使用与设计取舍
 - [事故报告：2026-09-01 拨号失败](docs/incident-2026-09-01-boostnet-dial-failure.md) — TLS 指纹超 MSS + GSO 丢段根因
