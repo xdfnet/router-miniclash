@@ -6,8 +6,14 @@
 #   ./scripts/update-kernel.sh --deploy   更新后同步到路由器并重启服务
 #
 # 平台: 默认 linux-arm64（mt7981 路由器）；可用 PLATFORM=xxx 覆盖
-# 来源: mihomo 内核  → MetaCubeX/mihomo 最新 release
-#       GeoIP 库     → MetaCubeX/meta-rules-dat 的 country.mmdb（常青 latest）
+#
+# 下载来源与放置位置（两文件均不入库，见 .gitignore）:
+#   内核  https://github.com/MetaCubeX/mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz
+#         版本号取自 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest
+#         → root/usr/bin/mihomo            （路由器 /usr/bin/mihomo）
+#   GeoIP https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/country.mmdb
+#         → root/etc/miniclash/Country.mmdb（路由器 /etc/miniclash/Country.mmdb，
+#                                            另备份 /usr/share/miniclash/etc/miniclash/）
 # 版本: 本地内核版本记录在 .mihomo-version（linux 二进制无法在 Mac 上运行 -v，
 #       故用标记文件对比；校验走 file 检查 ELF/ARM）
 set -euo pipefail

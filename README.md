@@ -40,14 +40,23 @@ config core 'core'
 /etc/init.d/miniclash start
 ```
 
-### 更新内核与 GeoIP 库
+### 内核与 GeoIP 库（来源 / 放置位置）
+
+内核 `/usr/bin/mihomo`（~55M）与 GeoIP 库 `Country.mmdb`（~8M）**不入库**（见 `.gitignore`），新克隆的仓库里没有这两个文件。用 `update-kernel.sh` 下载，脚本按下面两处路径放置；`install.sh` 发现缺失会自动先调它补齐。
+
+| 文件 | 下载来源 | 项目内放置位置（本地） | 路由器部署位置 |
+|---|---|---|---|
+| 内核 | `https://github.com/MetaCubeX/mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz`<br>版本号取自 `https://api.github.com/repos/MetaCubeX/mihomo/releases/latest` | `root/usr/bin/mihomo` | `/usr/bin/mihomo` |
+| GeoIP 库 | `https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/country.mmdb`（常青 latest） | `root/etc/miniclash/Country.mmdb` | `/etc/miniclash/Country.mmdb`<br>（另备份 `/usr/share/miniclash/etc/miniclash/Country.mmdb`） |
 
 ```bash
-./scripts/update-kernel.sh            # 仅下载/更新到项目 root/
-./scripts/update-kernel.sh --deploy   # 更新后同步到路由器并重启服务
+./scripts/update-kernel.sh            # 下载/更新到项目 root/ 下
+./scripts/update-kernel.sh --deploy   # 下载后同步到路由器并重启服务
 ```
 
-内核 `/usr/bin/mihomo`（55M）与 GeoIP 库 `Country.mmdb`（8M）**不入库**（见 `.gitignore`），新克隆仓库里没有这两个文件——直接跑 `install.sh` 会自动调用 `update-kernel.sh` 下载补齐。自动对比 mihomo 最新 release，版本相同则跳过内核；GeoIP 库（country.mmdb）每次拉最新。默认 linux-arm64（mt7981 路由器），可用 `PLATFORM=xxx` 覆盖。
+- `MICLASH` 默认平台 linux-arm64（mt7981 路由器），可用 `PLATFORM=xxx` 覆盖（如 `PLATFORM=linux-amd64`）。
+- 版本相同则跳过内核；GeoIP 库每次拉最新。
+- 手动放置也行：把内核放到 `root/usr/bin/mihomo`、GeoIP 放到 `root/etc/miniclash/Country.mmdb`，再跑 `install.sh` 同步即可。
 
 ## 日常使用
 

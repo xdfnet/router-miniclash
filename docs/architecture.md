@@ -39,11 +39,14 @@
 ```
 root/etc/config/miniclash      UCI 配置（唯一配置源）
 root/etc/init.d/miniclash      全部逻辑（生成/劫持/守护）
-root/etc/miniclash/Country.mmdb GeoIP 库（内置，损坏自动重灌）
-root/usr/bin/mihomo            内核二进制（内置）
+root/etc/miniclash/Country.mmdb GeoIP 库【不入库，update-kernel.sh 下载】
+                               来源 meta-rules-dat/releases/latest/download/country.mmdb
+root/usr/bin/mihomo            内核二进制【不入库，update-kernel.sh 下载】
+                               来源 mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz
+                               （两文件本地放此处，install.sh 缺失自动补齐；损坏自动重灌）
 root/usr/share/miniclash/judge.sh 跨国裁决（cron 每 5 分钟，双地址相加 + 防抖）
 scripts/install.sh             root/ → 路由器 / 同步（不覆盖 UCI 配置）
-scripts/update-kernel.sh       更新内置内核 + GeoIP（--deploy 同步并重启）
+scripts/update-kernel.sh       下载/更新内核 + GeoIP 到 root/（--deploy 同步并重启）
 scripts/uninstall.sh           彻底卸载
 subscription.url               订阅地址（一行，两个脚本共用）
 scripts/update-subscribe.sh    本地拉订阅/过滤日+新节点/上传/重启
