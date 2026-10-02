@@ -46,12 +46,12 @@ scripts/install.sh             root/ → 路由器 / 同步（不覆盖 UCI 配�
 scripts/update-kernel.sh       更新内置内核 + GeoIP（--deploy 同步并重启）
 scripts/uninstall.sh           彻底卸载
 subscription.url               订阅地址（一行，两个脚本共用）
-scripts/update-subscribe.sh    本地拉订阅/过滤日+新+美节点/上传/重启
+scripts/update-subscribe.sh    本地拉订阅/过滤日+新节点/上传/重启
 scripts/traffic.sh             查看套餐剩余流量/重置/到期（信息条目藏在订阅 proxies 段）
 
 运行时（路由器上，非仓库）:
 /etc/miniclash/config.yaml     生成的 mihomo 配置
-/etc/miniclash/subscribe.yaml  本地上传的订阅（仅日+新+美 20 节点）
+/etc/miniclash/subscribe.yaml  本地上传的订阅（仅日+新 16 节点）
 /etc/miniclash/api_secret      控制 API 密钥（随机生成）
 /etc/miniclash/judge.log       judge 裁决历史（每轮一行；独立轮转保留最后 2500 行 ≈ 8.7 天）
 /etc/miniclash/miniclash.log   内核 warning + init.d 事件（轮转保留最后 800 行）
@@ -87,10 +87,10 @@ start()
 
 ## 配置生成（gen_config）四个要点
 
-**① 头部自有，节点/规则直通**：端口 / DNS / API 三块由脚本写死；上传订阅的 proxies（仅日+新+美 20 节点）与 rules 原样交给内核，订阅自带的 port/dns 等段 awk 不输出——保证运行时行为可预期。
+**① 头部自有，节点/规则直通**：端口 / DNS / API 三块由脚本写死；上传订阅的 proxies（仅日+新 16 节点）与 rules 原样交给内核，订阅自带的 port/dns 等段 awk 不输出——保证运行时行为可预期。
 
-**② 自动优选组（select + 国家 url-test）**：从上传订阅提取节点名（过滤在本地完成），按固化国家顺序（日本,新加坡,美国）以前缀归集，在 rules 段前生成——
-- select 主组：`{ name: 自动优选, type: select, proxies: ['日本组','新加坡组','美国组'] }`
+**② 自动优选组（select + 国家 url-test）**：从上传订阅提取节点名（过滤在本地完成），按固化国家顺序（日本,新加坡）以前缀归集，在 rules 段前生成——
+- select 主组：`{ name: 自动优选, type: select, proxies: ['日本组','新加坡组'] }`
 - 每国一个 url-test 组：`{ name: 新加坡组, type: url-test, proxies: [新加坡1…], url: 'github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }`
 
 健康检查用 `expected-status: 200/204`：只认真实 204（generate_204 固定返回），防运营商劫持返回假 200 被误判为节点健康。
@@ -120,13 +120,13 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
 
 ## 自动选优（select 主组 + 国家 url-test + judge 裁决）
 
-主组「自动优选」是 **select** 组，成员是各**国家 url-test 组**（新加坡组/日本组/美国组）。国家组每 60s 测 `github.com/generate_204` 选组内延迟最优（`tolerance: 500` 防组内噪声横跳）——单节点故障内核秒级自愈，脚本不干预。
+主组「自动优选」是 **select** 组，成员是各**国家 url-test 组**（新加坡组/日本组）。国家组每 60s 测 `github.com/generate_204` 选组内延迟最优（`tolerance: 500` 防组内噪声横跳）——单节点故障内核秒级自愈，脚本不干预。
 
 **judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**两个真实地址** `github.com/generate_204`（主站，返 204）+ `github.githubassets.com/generate_204`（GitHub 网页静态资源走的 Fastly 链路，返 404 但握手成功、照样计时，调 delay API 时传 `expected-status=404`）；**节点分 = 两地址延迟相加**——锚点贴合浏览器真实加载，能区分各国到 Fastly 那跳的快慢。国家分 = 最快 2 个活节点的节点分均值，活节点不足 2 个 = 不可用。
 
 **防抖**（状态 `/tmp/miniclash_judge.state`）：当前国家实时从 select API 读；连续 2 次（10 分钟）同一别国领先、**且**当前国慢 20%（当前国不可用直接满足）才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
 
-**开机直选（BOOT 模式）**：select 启动默认固定选第一个成员（新加坡），并非实时最优。init.d start() 末尾以 `BOOT=1` 前台跑一次 judge，绕过双确认、按实测分数直接 PUT 进最优国家（约 6s）；若三国都不可用则安全保持默认。cron 常规轮次不带 BOOT，防抖不变。
+**开机直选（BOOT 模式）**：select 启动默认固定选第一个成员（新加坡），并非实时最优。init.d start() 末尾以 `BOOT=1` 前台跑一次 judge，绕过双确认、按实测分数直接 PUT 进最优国家（约 6s）；若两国都不可用则安全保持默认。cron 常规轮次不带 BOOT，防抖不变。
 
 **每轮落日志**：judge 每次运行（含未切换）都在独立的 judge.log 记一行 `[judge] 新加坡:291ms, 日本:413ms | 保持 新加坡`，巡检直接 tail 回溯；独立文件避免被量大的内核 warning 冲掉历史。两份日志超 512KB 都按行原地截断（judge.log 留 2500 行 ≈ 8.7 天、miniclash.log 留 800 行），不切半行、inode 不变，防撑爆闪存且不影响 mihomo 持续写入。
 

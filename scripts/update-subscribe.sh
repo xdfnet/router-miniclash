@@ -1,12 +1,12 @@
 #!/bin/bash
-# 本地拉取 BoostNet 订阅 → 过滤仅日本/新加坡/美国节点 → 上传路由器并重启
+# 本地拉取 BoostNet 订阅 → 过滤仅日本/新加坡节点 → 上传路由器并重启
 # 路由器不保存订阅地址；用法: ./scripts/update-subscribe.sh [路由器别名，默认 luyou]
 set -e
 
 ROUTER="${1:-luyou}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 URL=$(cat "$ROOT/subscription.url")
-KEEP='日本|新加坡|美国'
+KEEP='日本|新加坡'
 
 TMP=$(mktemp); trap 'rm -f "$TMP" "$TMP.d" "$TMP.f"' EXIT
 
@@ -19,8 +19,8 @@ if head -c 128 "$TMP" | grep -qE '^[A-Za-z0-9+/=]{40,}$'; then
 fi
 grep -q '^proxies:' "$TMP" || { echo "订阅不含 proxies: 段"; exit 1; }
 
-echo "==> 过滤节点（仅日本/新加坡/美国），删除订阅自带 proxy-groups"
-# proxies 段只保留日本/新加坡/美国节点（订阅单行流式），proxy-groups 整段删除
+echo "==> 过滤节点（仅日本/新加坡），删除订阅自带 proxy-groups"
+# proxies 段只保留日本/新加坡节点（订阅单行流式），proxy-groups 整段删除
 # （自带组引用全部节点，保留会因缺失节点导致内核加载失败；组由路由 gen_config 统一生成）
 awk -v keep="$KEEP" '
     /^proxies:/ { inp=1; print; next }
@@ -32,8 +32,8 @@ awk -v keep="$KEEP" '
     { print }
 ' "$TMP" > "$TMP.f"
 
-n=$(grep -cE 'name: (日本|新加坡|美国)' "$TMP.f")
-[ "$n" -eq 20 ] || { echo "过滤后节点数异常: $n（期望 20）"; exit 1; }
+n=$(grep -cE 'name: (日本|新加坡)' "$TMP.f")
+[ "$n" -eq 16 ] || { echo "过滤后节点数异常: $n（期望 16）"; exit 1; }
 
 echo "==> 上传并重启 (路由器 $ROUTER)"
 ssh "$ROUTER" 'mkdir -p /etc/miniclash'

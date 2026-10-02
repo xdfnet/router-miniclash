@@ -22,7 +22,7 @@ log() { echo "[$(date '+%F %T')] [judge] $*" >> $JLOG; }
 [ "$(get enabled)" = "1" ] || exit 0
 group=$(get group); group=${group:-自动优选}
 # 参与裁决的国家（有序，第 1 个为 select 默认；单一场景固化）
-countries=日本,新加坡,美国
+countries=日本,新加坡
 
 # URL 编码（逐字节；中文 UTF-8 按字节编码正是所需）
 urlencode() {
