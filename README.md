@@ -66,6 +66,7 @@ config core 'core'
 - 更新订阅：`./scripts/update-subscribe.sh`（本地拉取 → 过滤日本/新加坡节点 → 上传 → 重启，一条龙）
 - 查套餐：`./scripts/traffic.sh`（剩余流量 / 下次重置 / 套餐到期 / 官网，信息条目藏在订阅里）
 - 看裁决历史：`ssh luyou "tail /etc/miniclash/judge.log"`（独立日志，每 5 分钟一行：各国分数 + 保持/候选/切换；保留约 8.7 天，不被内核 warning 淹没）
+- 查流量去向：`/usr/share/miniclash/meter.sh` 每分钟采样内核连接，按「源IP·域名·是否走代理·字节」记录到大分区 `/mnt/mmcblk0p7/logs/miniclash/meter-YYYYMMDD.csv`（保留 32 天），用来揪出哪些网站/设备烧流量、哪些本可直连却走了代理
 - 日志智能分诊：`./scripts/diagnose.sh`（TypeSafe Jev 判断节点故障 / 故障类型 / 健康度，需 `TYPESAFE_API_KEY` 与 jq；日志自动脱敏后出网）
 - 自动选优：主组「自动优选」是 select 组，成员为新加坡组/日本组两个 url-test 国家组——组内单节点故障内核秒级自愈；整国劣化时 judge.sh 每 5 分钟对 GitHub 主站 + githubassets(Fastly) 两个地址计时相加、谁总分短选谁，连续 2 次领先 20% 才自动跨国切换，防打地鼠。`node` 由 watchdog 两层展开上报
 
@@ -159,6 +160,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 - [x] 自动选优：select 主组 + 国家 url-test 组（组内秒级自愈；judge 每 5 分钟双地址相加跨国裁决，双确认 + 20% margin 防抖）
 - [x] watchdog 两层展开上报当前实际节点到 uci（select → 国家组 → 节点）
 - [x] 大陆 `GEOIP,CN,DIRECT` 直连
+- [x] 流量字节计量：meter.sh 每分钟采样内核连接 API，按设备/域名/是否代理累计真实字节到大分区（保留 32 天），用于分析流量去向与本可直连的代理流量
 - [x] 内核 + GeoIP 库不入库（体积原因），update-kernel.sh 一条命令下载/更新（含 MD5 校验），install.sh 缺失时自动补齐；启动前 `mihomo -t` 内容校验，F2FS 写坏/丢文件自动从备份恢复
 - [x] 真机验证：google / youtube / github 通，大陆直连
 - [ ] UDP（TPROXY）— 暂不做，TCP 够日常使用

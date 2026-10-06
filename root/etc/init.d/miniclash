@@ -283,9 +283,11 @@ start() {
     # 关闭 WAN 接口 GSO/TSO：mihomo 隧道内 TLS record 超 MSS 被网卡合并大包，中间设备丢前段
     # → 大流量传输间歇失败（2026-09-01 根因之二，配合 client-fingerprint 注入解决握手层）
     ethtool -K eth1 gso off tso off 2>/dev/null
-    # 幂等安装 judge cron（每 5 分钟跨国裁决），重启 cron 加载
+    # 幂等安装 cron：judge 每 5 分钟跨国裁决；meter 每分钟采样字节（分析哪些不该走代理）
     grep -q judge.sh /etc/crontabs/root 2>/dev/null || \
         echo '*/5 * * * * /usr/share/miniclash/judge.sh' >> /etc/crontabs/root
+    grep -q meter.sh /etc/crontabs/root 2>/dev/null || \
+        echo '* * * * * /usr/share/miniclash/meter.sh' >> /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
     log "已启动 (PID $(pidof mihomo))"
     # 开机/重启即测一次，直接进当前最优国家（BOOT 模式绕过双确认；阻塞约 6s）

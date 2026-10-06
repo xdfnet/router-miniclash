@@ -45,6 +45,7 @@ root/usr/bin/mihomo            内核二进制【不入库，update-kernel.sh �
                                来源 mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz
                                （两文件本地放此处，install.sh 缺失自动补齐；损坏自动重灌）
 root/usr/share/miniclash/judge.sh 跨国裁决（cron 每 5 分钟，双地址相加 + 防抖）
+root/usr/share/miniclash/meter.sh 流量字节计量（cron 每分钟，采样连接 API 算字节增量）
 scripts/install.sh             root/ → 路由器 / 同步（不覆盖 UCI 配置）
 scripts/update-kernel.sh       下载/更新内核 + GeoIP 到 root/（--deploy 同步并重启）
 scripts/uninstall.sh           彻底卸载
@@ -60,7 +61,13 @@ scripts/traffic.sh             查看套餐剩余流量/重置/到期（信息�
 /etc/miniclash/miniclash.log   内核 warning + init.d 事件（轮转保留最后 800 行）
 /var/run/miniclash_watchdog.pid  watchdog 进程号
 /tmp/miniclash_judge.state     judge 防抖状态（PENDING/COUNT）
+
+大分区（eMMC p7，ext4，55.7G/可用 52.8G，开机自动挂载 /mnt/mmcblk0p7）:
+/mnt/mmcblk0p7/logs/miniclash/meter-YYYYMMDD.csv  每分钟字节增量（保留 32 天）
+/tmp/miniclash-meter.state     meter 连接基线（每连接上轮 upload/download，重启重建）
 ```
+
+> p7 曾长期空闲：fstab 记录的 UUID 与分区真实 UUID（`bc56f773-…`）不符，修正后开机由 block 自动挂载。
 
 ## 配置（UCI 4 字段）
 
@@ -84,7 +91,7 @@ start()
  7. start_watchdog —— 后台上报循环（两层展开实际节点 → 落盘 uci node）
  8. ipt_start + dns_start —— 建立透明代理劫持与 DNS 联动
  9. 关闭 WAN GSO/TSO —— 隧道内 TLS record 超 MSS 被网卡合并大包、中间设备丢前段（配合指纹注入）
-10. 幂等安装 judge cron —— 每 5 分钟跨国裁决
+10. 幂等安装 cron —— judge 每 5 分钟跨国裁决；meter 每分钟字节计量
 11. BOOT=1 前台跑一次 judge —— 实测打分直接进当前最优国家（开机直选，绕过双确认；约 6s）
 ```
 
@@ -142,6 +149,14 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
 watchdog 不驱动切换——组内切换交给内核、跨国切换交给 judge。watchdog 每 `check_interval` 秒读 `GET /proxies/自动优选`，`now` 是国家组名（新加坡组），再查 `/proxies/新加坡组` 展开第二层取实际节点，落盘到 UCI `node`（供查看/诊断），仅在变化时写。
 
 **为什么 judge 取代固定顺序脚本切换**：2026-08-18 下午新加坡全线劣化，脚本按固定顺序"选第一个可达的"连续 5 次切换（8→2→8→3→7→2）打地鼠——候选全是劣化节点时切谁都不稳。judge 双确认 + 20% margin 后才动，稳定无风暴。
+
+## 流量计量（meter）
+
+`/usr/share/miniclash/meter.sh`（cron 每分钟）解决"每月流量不够用、要找原因"。数连接次数找不到真凶（一个视频长连接顶几千个小请求），必须计**字节**。
+
+每分钟 `GET /connections`（9090，api_secret），对每个连接读累计 `upload/download`、`sourceIP`、`host`（空回退 sniffHost/destinationIP）、`rulePayload`、`chains`（含非 DIRECT/REJECT 节点即记为代理）。与 `/tmp/miniclash-meter.state` 里该连接上一轮累计值相减得本轮字节增量，非零追加一行 `epoch,源IP,域名,规则,是否代理,下载增量,上传增量` 到当天 CSV，再用本轮存活连接重写 state。新连接首轮只建基线不计增量。文件写大分区 p7，保留 32 天。
+
+**局限**：只统计采样时仍存活的连接；两次采样间建立又结束的短连接漏计，但其字节占比极小。视频/下载/系统更新等长连接必被抓，正是流量大头。分析据此回答：哪些域名/设备烧代理流量最多、哪些本可直连却被代理。meter 挂载失败/无连接均静默退出，不影响代理。
 
 ## 关键设计决策
 

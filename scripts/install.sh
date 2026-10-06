@@ -22,7 +22,7 @@ echo "==> 首次部署时安装配置模板（已有配置则保留现场）"
 ssh "$ROUTER" 'test -f /etc/config/miniclash' || scp "$ROOT/root/etc/config/miniclash" "$ROUTER:/etc/config/miniclash"
 
 echo "==> 设置可执行权限"
-ssh "$ROUTER" 'chmod +x /etc/init.d/miniclash /usr/bin/mihomo 2>/dev/null; true'
+ssh "$ROUTER" 'chmod +x /etc/init.d/miniclash /usr/bin/mihomo /usr/share/miniclash/meter.sh 2>/dev/null; true'
 # 确认 GeoIP 备份存在
 ssh "$ROUTER" 'ls -lh /usr/share/miniclash/etc/miniclash/Country.mmdb 2>/dev/null || echo "   注意: GeoIP 备份不存在"; true'
 
