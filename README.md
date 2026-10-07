@@ -151,6 +151,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 | 整国线路劣化（如日本全部节点 EOF / 高延迟） | judge 最多 10 分钟自动切到别国；急时手动切：在路由器执行 `curl -X PUT -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" -H 'Content-Type: application/json' -d '{"name":"新加坡组"}' http://127.0.0.1:9090/proxies/自动优选` |
 | iPhone / Apple 推送不通（`push.apple.com` 直连超时） | 订阅 `apple.com,DIRECT` 把 APNs 兜成直连而本网络连不上 Apple → init.d 已自动在 rules 最前注入 `push.apple.com → 自动优选`，重启生效 |
 | Microsoft 账号 / OneDrive / Office 登录超时 | 订阅把微软域名兜成 DIRECT 而本网络直连不通 → init.d 已注入微软域名 → 自动优选，重启生效 |
+| 主机场流量耗尽、需临时访问国外（单设备） | 用 fnos 上常驻的东方互联无头客户端：代理填 `192.168.100.6:10808`（SOCKS5/HTTP）；命令行临时 `export https_proxy=http://192.168.100.6:10808`。为手动指向的单设备代理，不接管全屋 |
 
 ## 状态
 
