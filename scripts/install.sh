@@ -7,7 +7,7 @@ ROUTER="${1:-luyou}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # 内核 / GeoIP 库不入库（见 .gitignore），首次部署或新克隆后需按需下载
-if [ ! -f "$ROOT/root/usr/bin/mihomo" ] || [ ! -f "$ROOT/root/etc/miniclash/Country.mmdb" ]; then
+if [ ! -f "$ROOT/root/usr/bin/mihomo" ] || [ ! -f "$ROOT/root/etc/miniclash/Country.mmdb" ] || [ ! -f "$ROOT/root/etc/miniclash/cn.mrs" ]; then
     echo "==> 本地缺少内核/GeoIP 库，先下载"
     "$ROOT/scripts/update-kernel.sh"
 fi

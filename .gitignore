@@ -1,6 +1,7 @@
 .DS_Store
 .router/
 
-# 内核与 GeoIP 库不入库（55M + 8M），由 scripts/update-kernel.sh 下载
+# 内核与 GeoIP/GeoSite 库不入库（55M + 8M + 0.5M），由 scripts/update-kernel.sh 下载
 root/usr/bin/mihomo
 root/etc/miniclash/Country.mmdb
+root/etc/miniclash/cn.mrs

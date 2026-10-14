@@ -48,6 +48,7 @@ config core 'core'
 |---|---|---|---|
 | 内核 | `https://github.com/MetaCubeX/mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz`<br>版本号取自 `https://api.github.com/repos/MetaCubeX/mihomo/releases/latest` | `root/usr/bin/mihomo` | `/usr/bin/mihomo` |
 | GeoIP 库 | `https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/country.mmdb`（常青 latest） | `root/etc/miniclash/Country.mmdb` | `/etc/miniclash/Country.mmdb`<br>（另备份 `/usr/share/miniclash/etc/miniclash/Country.mmdb`） |
+| GeoSite 国内域名集 | `https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs`（mrs 格式，约 0.5M） | `root/etc/miniclash/cn.mrs` | `/etc/miniclash/cn.mrs`（供 DNS 国内外分流，见「DNS 国内外分流解析」） |
 
 ```bash
 ./scripts/update-kernel.sh            # 下载/更新到项目 root/ 下
@@ -97,7 +98,7 @@ config core 'core'
 ## 怎么工作
 
 ```
-LAN 设备 ──▶ dnsmasq ──▶ mihomo fake-ip (7874)     真实 DNS (DoH)
+LAN 设备 ──▶ dnsmasq ──▶ mihomo fake-ip (7874)     真实 DNS (分流)
     │            ▲                                    │
     │ TCP        └── 域名解析 ── 防污染 ──────────────┘
     ▼
@@ -118,10 +119,10 @@ iptables 把 LAN 的 TCP 全量 REDIRECT 到 7892，内核从 socket 取回原�
 **② fake-ip DNS**（`listen: 127.0.0.1:7874` + `enhanced-mode: fake-ip`）
 dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域名映射成 `198.18.0.1/16` 的假 IP 返回；客户端连接假 IP 时，内核还原出真实域名再匹配规则、走节点。域名层面的分流、防泄漏、防污染都由它完成，客户端根本碰不到真实 IP。
 
-**③ DNS 三层防污染**
-- `nameserver`：国内 DoH（`https://doh.pub/dns-query`、`https://dns.alidns.com/dns-query`），主解析，不污染海外域名
-- `fallback`：明文 DNS（223.5.5.5 / 119.29.29.29）兜底
-- `proxy-server-nameserver`：节点域名（如 `节点.example.com`）用真实 DNS 解析，防止被 fake-ip 化导致内核连节点死循环
+**③ DNS 国内外分流解析**
+- `nameserver`：默认**全部域名经节点用国外 DoH**（Cloudflare `https://1.1.1.1/dns-query` / Google `https://8.8.8.8/dns-query`，标 `#自动优选` 走代理）——不掉国内 DNS、防污染
+- `nameserver-policy`：国内域名（`rule-set:cn`，来自 `cn.mrs`）例外走国内 DoH（doh.pub/alidns）直连解析，保证国内站拿到本地 CDN；内网域名（`+.lan`/`+.local`）走明文
+- `proxy-server-nameserver`：节点域名（如 `节点.example.com`）用国内真实 DNS 解析，防止被 fake-ip 化导致内核连节点死循环
 - `default-nameserver`：bootstrap，解析 DNS 服务器自身的域名
 
 **④ 跨国自动选优**（`external-controller: 9090` + `secret`）
@@ -157,7 +158,7 @@ dnsmasq 上游指向 7874（配置后需 `restart` 才生效）。内核把域�
 
 - [x] 无界面纯配置：4 个 UCI 字段 + 单 init.d + 1 条命令部署
 - [x] 订阅本地更新（拉取/base64 检测/过滤日+新 16 节点/上传/重启，路由器不保存订阅地址）
-- [x] fake-ip + DoH 防污染 + 节点域名走真实 DNS 防环路
+- [x] fake-ip + DNS 国内外分流（国外域名经节点用国外 DoH 解析、国内域名走国内 DoH）+ 节点域名走真实 DNS 防环路
 - [x] 自动选优：select 主组 + 国家 url-test 组（组内秒级自愈；judge 每 5 分钟双地址相加跨国裁决，双确认 + 20% margin 防抖）
 - [x] watchdog 两层展开上报当前实际节点到 uci（select → 国家组 → 节点）
 - [x] 大陆 `GEOIP,CN,DIRECT` 直连

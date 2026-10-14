@@ -14,6 +14,8 @@
 #   GeoIP https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/country.mmdb
 #         → root/etc/miniclash/Country.mmdb（路由器 /etc/miniclash/Country.mmdb，
 #                                            另备份 /usr/share/miniclash/etc/miniclash/）
+#   GeoSite https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs
+#         → root/etc/miniclash/cn.mrs（路由器 /etc/miniclash/cn.mrs；国内域名集，供 DNS 分流）
 # 版本: 本地内核版本记录在 .mihomo-version（linux 二进制无法在 Mac 上运行 -v，
 #       故用标记文件对比；校验走 file 检查 ELF/ARM）
 set -euo pipefail
@@ -23,6 +25,7 @@ PLATFORM="${PLATFORM:-linux-arm64}"
 ROOT="$(pwd)/root"
 MIHOMO_BIN="$ROOT/usr/bin/mihomo"
 MMDB="$ROOT/etc/miniclash/Country.mmdb"
+CN_MRS="$ROOT/etc/miniclash/cn.mrs"
 VER_FILE="$(pwd)/.mihomo-version"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -67,6 +70,23 @@ if [ -f "$MMDB" ]; then
 else
     mv "$TMP/Country.mmdb" "$MMDB"
     echo "   GeoIP 已更新 ($(du -h "$MMDB" | cut -f1))"
+fi
+
+echo "==> 下载最新 GeoSite 国内域名集 (cn.mrs，供 DNS 分流)"
+curl -fsSL -o "$TMP/cn.mrs" \
+    "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs"
+# 损坏保护：zstd 压缩的 mrs 应 > 100KB
+[ "$(wc -c < "$TMP/cn.mrs")" -ge 102400 ] || { echo "错误: 下载的 cn.mrs 异常 (<100KB)，已取消" >&2; exit 1; }
+if [ -f "$CN_MRS" ]; then
+    old_md5=$(md5sum "$CN_MRS" 2>/dev/null | cut -d' ' -f1)
+    new_md5=$(md5sum "$TMP/cn.mrs" 2>/dev/null | cut -d' ' -f1)
+    [ "$old_md5" = "$new_md5" ] && echo "   cn.mrs 已是最新，跳过" || {
+        mv "$TMP/cn.mrs" "$CN_MRS"
+        echo "   cn.mrs 已更新 ($(du -h "$CN_MRS" | cut -f1), md5=$new_md5)"
+    }
+else
+    mv "$TMP/cn.mrs" "$CN_MRS"
+    echo "   cn.mrs 已更新 ($(du -h "$CN_MRS" | cut -f1))"
 fi
 
 if [ "${1:-}" = "--deploy" ]; then

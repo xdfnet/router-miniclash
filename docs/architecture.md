@@ -41,6 +41,8 @@ root/etc/config/miniclash      UCI 配置（唯一配置源）
 root/etc/init.d/miniclash      全部逻辑（生成/劫持/守护）
 root/etc/miniclash/Country.mmdb GeoIP 库【不入库，update-kernel.sh 下载】
                                来源 meta-rules-dat/releases/latest/download/country.mmdb
+root/etc/miniclash/cn.mrs      GeoSite 国内域名集【不入库，update-kernel.sh 下载】
+                               来源 meta-rules-dat/meta/geo/geosite/cn.mrs（DNS 国内外分流用）
 root/usr/bin/mihomo            内核二进制【不入库，update-kernel.sh 下载】
                                来源 mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz
                                （两文件本地放此处，install.sh 缺失自动补齐；损坏自动重灌）
@@ -57,6 +59,7 @@ scripts/traffic.sh             查看套餐剩余流量/重置/到期（信息�
 /etc/miniclash/config.yaml     生成的 mihomo 配置
 /etc/miniclash/subscribe.yaml  本地上传的订阅（仅日+新 16 节点）
 /etc/miniclash/api_secret      控制 API 密钥（随机生成）
+/etc/miniclash/cn.mrs          GeoSite 国内域名集（DNS 分流用，由 update-kernel.sh 下发）
 /etc/miniclash/judge.log       judge 裁决历史（每轮一行；独立轮转保留最后 2500 行 ≈ 8.7 天）
 /etc/miniclash/miniclash.log   内核 warning + init.d 事件（轮转保留最后 800 行）
 /var/run/miniclash_watchdog.pid  watchdog 进程号
@@ -121,12 +124,15 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
 
 **只劫持 LAN 转发流量**（PREROUTING），**本机出站不劫持**——否则内核连接节点的那一跳会被重定向回自己，形成自环，表现为 `context deadline exceeded`。这是最容易回退的故障，重跑 install.sh 即可修复。
 
-## DNS（fake-ip 三层防污染）
+## DNS（fake-ip 国内外分流）
 
 - **fake-ip**：`listen 127.0.0.1:7874` + `enhanced-mode: fake-ip`，域名映射到 `198.18.0.1/16`，客户端永远碰不到真实 IP；连接时内核还原真实域名再匹配规则。
-- **nameserver**：国内 DoH（doh.pub / alidns）主解析，不污染海外域名。
-- **fallback**：明文 DNS 兜底；**proxy-server-nameserver**：节点域名用真实 DNS，防 fake-ip 化导致内核连节点死循环。
+- **nameserver（默认）**：全部域名经节点用国外 DoH（Cloudflare `1.1.1.1` / Google `8.8.8.8`，标 `#自动优选`）解析——不掉国内 DNS、防污染。
+- **nameserver-policy（例外）**：国内域名（`rule-set:cn`，由 `cn.mrs` 提供）走国内 DoH（doh.pub/alidns）直连解析，保证国内站拿到本地 CDN；`+.lan`/`+.local` 内网域名走明文。
+- **proxy-server-nameserver**：节点域名用国内真实 DNS，防 fake-ip 化导致内核连节点死循环（**必须直连**，否则 DNS 经代理解析节点域名会死循环）。
+- **default-nameserver**：bootstrap（223.5.5.5 / 119.29.29.29），解析 DNS 服务器自身域名。
 - **联动**：dnsmasq 上游指向 7874，必须 `restart`（`reload` 不重读 `/tmp/dnsmasq.d/` 新文件）。
+- **权衡**：DNS 默认出口依赖代理链路（代理抖动时海外解析受影响）；国内域名仍走国内直连，不受影响。
 
 ## 自动选优（select 主组 + 国家 url-test + judge 裁决）
 

@@ -16,7 +16,7 @@ MiniClash 不翻译任何协议，直接用 mihomo 内核的能力。本文对�
    │ proxies   订阅 anytls 节点直通（不翻译）    │
    │ proxy-groups 自动优选=select+国家url-test  │
    │ rules     订阅规则直通 + 注入 EXTRA        │
-   │ dns       fake-ip 三层防污染              │
+   │ dns       fake-ip 国内外分流              │
    │ listeners redir(劫持)/mixed(测试)/tproxy    │
    │ api       9090 watchdog 上报节点           │
    └──────────────────────────────────────────┘
@@ -151,7 +151,7 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 
 ---
 
-## 4. DNS（fake-ip 三层防污染）
+## 4. DNS（fake-ip 国内外分流）
 
 ### 4.1 解析模式
 
@@ -171,18 +171,21 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 
 | 字段 | 官方语义 | MiniClash 值 |
 |------|----------|-------------|
-| `default-nameserver` | **bootstrap**：必须为 IP，解析 DNS 服务器自身域名 | `223.5.5.5` |
-| `nameserver` | 默认解析服务器（主） | `https://doh.pub/dns-query`、`https://dns.alidns.com/dns-query`（国内 DoH） |
-| `fallback` | 后备解析服务器（一般境外可信 DNS），配置后默认启用 `fallback-filter.geoip-code: CN` | `223.5.5.5`、`119.29.29.29`（明文兜底） |
-| `proxy-server-nameserver` | **仅解析节点域名**，防节点域名被 fake-ip 化导致连节点死循环 | `223.5.5.5`、`119.29.29.29` |
-| `nameserver-policy` | 指定域名走指定解析器（可用 geosite），优先于 nameserver/fallback | 未用 |
+| `default-nameserver` | **bootstrap**：必须为 IP，解析 DNS 服务器自身域名 | `223.5.5.5`、`119.29.29.29` |
+| `nameserver` | 默认解析服务器（主） | `https://1.1.1.1/dns-query#自动优选`、`https://8.8.8.8/dns-query#自动优选`（**国外 DoH 经代理**，不掉国内 DNS） |
+| `nameserver-policy` | 指定域名走指定解析器（可用 geosite/rule-set），优先于 nameserver | `rule-set:cn` → 国内 DoH（doh.pub/alidns）直连；`+.lan`/`+.local` → 明文 |
+| `proxy-server-nameserver` | **仅解析节点域名**，防节点域名被 fake-ip 化导致连节点死循环 | `223.5.5.5`、`119.29.29.29`（**必须直连**） |
+| `fallback` | 后备解析服务器（旧防污染机制） | 未用（改用 nameserver + nameserver-policy 分流） |
 | `direct-nameserver` | DIRECT 出口域名专用解析 | 未用 |
-| `fallback-filter` | 判定"污染"的规则，命中则用 fallback 结果 | 未设（依赖默认 geoip=CN） |
+| `fallback-filter` | 判定"污染"的规则，命中则用 fallback 结果 | 未设（已不依赖 fallback） |
 
-**MiniClash 三层防污染设计**：
+**MiniClash 国内外分流设计**：
 1. **fake-ip**：客户端不碰真实 IP
-2. **nameserver 用国内 DoH**：主解析不污染海外域名
-3. **proxy-server-nameserver 用明文 IP 兜底**：节点域名必须拿到真实 IP
+2. **nameserver 经代理用国外 DoH**：海外域名不掉国内 DNS、防污染
+3. **nameserver-policy 让国内域名（`rule-set:cn`）走国内 DoH 直连**：国内站拿到本地 CDN
+4. **proxy-server-nameserver 用明文 IP 兜底**：节点域名必须直连拿到真实 IP（否则经代理解析节点域名会死循环）
+
+> `rule-set:cn` 的域名集来自 `cn.mrs`（`rule-providers` 以 `type: file / format: mrs` 加载，无需联网下载 geosite.dat）。
 
 **验证**：
 ```sh

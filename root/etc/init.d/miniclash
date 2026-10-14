@@ -77,26 +77,40 @@ gen_config() {
         echo "    - \"+.myzxdy.top\""
         echo "  default-nameserver:"
         echo "    - 223.5.5.5"
-        echo "  # DoH 为主（doh.pub/alidns 国内直连，不污染海外域名）"
-        echo "  # 明文 DNS 兜底，避免 223.5.5.5 直接解析污染 google/youtube"
-        echo "  nameserver:"
-        echo "    - https://doh.pub/dns-query"
-        echo "    - https://dns.alidns.com/dns-query"
-        echo "  fallback:"
-        echo "    - 223.5.5.5"
         echo "    - 119.29.29.29"
+        echo "  # 默认解析：全部域名经节点用国外 DoH 查询（不掉国内 DNS、防污染）"
+        echo "  nameserver:"
+        echo "    - https://1.1.1.1/dns-query#$group"
+        echo "    - https://8.8.8.8/dns-query#$group"
+        echo "  # 例外：国内域名（rule-set cn）走国内 DoH 直连解析；内网域名走明文"
+        echo "  nameserver-policy:"
+        echo "    \"rule-set:cn\":"
+        echo "      - https://doh.pub/dns-query"
+        echo "      - https://dns.alidns.com/dns-query"
+        echo "    \"+.lan\":"
+        echo "      - 223.5.5.5"
+        echo "    \"+.local\":"
+        echo "      - 223.5.5.5"
         echo "  # 节点域名用真实 DNS 解析，避免被 fake-ip 化导致内核死循环"
         echo "  proxy-server-nameserver:"
         echo "    - 223.5.5.5"
         echo "    - 119.29.29.29"
+        echo "rule-providers:"
+        echo "  cn:"
+        echo "    type: file"
+        echo "    behavior: domain"
+        echo "    format: mrs"
+        echo "    path: ./cn.mrs"
         # 订阅从 proxies: 起直通；在 rules 最前注入"订阅 DIRECT 兜底、但本网络直连不通"的海外服务走代理：
         #   Apple 全家（apple.com/icloud.com 被订阅兜 DIRECT、本网络直连 Apple 超时）、
         #   微软全家（Microsoft 账号/OneDrive/Office 登录与更新）
-        # 反向：国内可直连却被 GEOIP 兜进代理的，强制 DIRECT：
-        #   hf-mirror.com（东京 SAKURA）、xiaohongshu.com（小红书）、sun-clan.com
+        # 反向：国内可直连却被 GEOIP 或上面的注入兜进代理的，强制 DIRECT：
+        #   hf-mirror.com（东京 SAKURA）、xiaohongshu.com（小红书）、sun-clan.com、
+        #   prss.microsoft.com（VSCode 等下载 CDN，国内可直连，须排在 microsoft.com 之前）
         # 注意：注入缩进必须与订阅规则条目一致（awk 动态对齐：旧订阅 4 空格、新订阅 2 空格；缩进不匹配会破坏 YAML）
         if [ -n "$group" ]; then
-            EXTRA="    - DOMAIN-SUFFIX,apple.com,$group
+            EXTRA="    - DOMAIN-SUFFIX,prss.microsoft.com,DIRECT
+    - DOMAIN-SUFFIX,apple.com,$group
     - DOMAIN-SUFFIX,icloud.com,$group
     - DOMAIN-SUFFIX,microsoft.com,$group
     - DOMAIN-SUFFIX,microsoftonline.com,$group
