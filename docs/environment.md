@@ -52,6 +52,18 @@ WAN ── eth1 ──▶ ImmortalWrt ── eth0/br-lan ──▶ LAN 设备
 | Mac | 192.168.100.10 | |
 | ESP32-S3 | 192.168.100.12 | |
 
+## DNS 走向
+
+| 状态 | 上游 | 说明 |
+|---|---|---|
+| 代理开启 | mihomo `127.0.0.1:7874` | dnsmasq 的 `/tmp/dnsmasq.d/miniclash.conf`（`no-resolv` + `server=127.0.0.1#7874`）接管；全屋（含路由器本机）走 mihomo 分流：海外域名经代理解析、国内域名走国内 DoH |
+| 代理关闭 | `223.5.5.5` / `119.29.29.29` | `miniclash stop` 删掉上述 conf，dnsmasq 回落 `resolv-file`（`/tmp/resolv.conf.d/resolv.conf.auto`）= 阿里 + 腾讯 |
+
+- WAN 口 `eth1` 已设 `peerdns=0` + 固定 DNS（`uci add_list network.wan.dns`），**不再用光猫/运营商 DNS**（原为光猫下发的 `192.168.1.1`）。2026-10-14 tcpdump 实证：关闭代理时 DNS 包全部发往 `223.5.5.5`，零发往 `192.168.1.1`。
+- 改法：`uci set network.wan.peerdns=0; uci add_list network.wan.dns=223.5.5.5; uci add_list network.wan.dns=119.29.29.29; uci commit network; ifup wan`
+
+> **路由器本机解析的坑**：路由器自身（非转发流量）不走 iptables 劫持。代理开启时本机解析拿到 fake-ip（`198.18.x.x`），却无法直连该假 IP —— 故路由器自身主动访问域名（如 `opkg update`、本机 `curl`）会失败，属设计使然；LAN 设备不受影响。
+
 ## 关键服务与端口
 
 | 服务 | 端口 | 说明 |
