@@ -119,10 +119,12 @@ start()
 ## 透明代理（iptables）
 
 ```
-PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
+PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → REDIRECT 7892
 ```
 
 **只劫持 LAN 转发流量**（PREROUTING），**本机出站不劫持**——否则内核连接节点的那一跳会被重定向回自己，形成自环，表现为 `context deadline exceeded`。这是最容易回退的故障，重跑 install.sh 即可修复。
+
+**放行 fnos（192.168.100.6）**：fnos 上跑着兜底代理（东方互联），它的上游在境外——若被本链劫持就会绕走主代理，**主代理挂时兜底反被连坐、在唯一需要它的时刻失效**（2026-10-16 实测：主机场入口故障期间，经 fnos 出网全部超时，而其端口、主机、上游直连均正常）。故在 REDIRECT 之前按源 IP 放行，让兜底独立出网。fnos 自带代理客户端，不需要路由器替它分流。
 
 ## DNS（fake-ip 国内外分流）
 

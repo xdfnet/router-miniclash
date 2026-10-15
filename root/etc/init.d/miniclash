@@ -197,6 +197,10 @@ ipt_start() {
     for net in 127.0.0.0/8 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12 224.0.0.0/4 0.0.0.0/8; do
         iptables -t nat -A MINICLASH -d $net -j RETURN
     done
+    # fnos 兜底代理（192.168.100.6）出网直连：它的上游在境外，若被本链劫持会绕走主代理——
+    # 主代理挂时兜底反被连坐，恰在最该顶上时失效（2026-10-16 实测：谷歌/GitHub 全断）。
+    # 放行后兜底独立可用；fnos 自己有代理客户端，不需要路由器替它分流。
+    iptables -t nat -A MINICLASH -s 192.168.100.6 -j RETURN
     iptables -t nat -A MINICLASH -p tcp -j REDIRECT --to-ports 7892
 
     # 只劫持转发流量（局域网设备）；本机出站不劫持——
