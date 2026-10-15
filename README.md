@@ -41,6 +41,7 @@ config core 'core'
 | 看当前实际节点 | `ssh luyou "uci get miniclash.core.node"` |
 | 更新订阅 | `./scripts/update-subscribe.sh`（拉取→过滤日/新→上传→重启，一条龙） |
 | 查套餐流量 | `./scripts/traffic.sh`（剩余 / 重置 / 到期） |
+| 流量走向审计 | `./scripts/traffic-audit.sh [天数]`（代理/直连构成、兜底代理核查） |
 | 看裁决历史 | `ssh luyou "tail /etc/miniclash/judge.log"`（每 5 分钟一行） |
 | 内核 / GeoIP 更新 | `./scripts/update-kernel.sh [--deploy]` |
 | 日志智能分诊 | `./scripts/diagnose.sh`（TypeSafe Jev，需 `TYPESAFE_API_KEY` 与 jq） |
