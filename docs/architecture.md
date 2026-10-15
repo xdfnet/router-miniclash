@@ -138,7 +138,9 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → REDIRECT 7892
 
 主组「自动优选」是 **select** 组，成员是各**国家 url-test 组**（新加坡组/日本组）。国家组每 60s 测 `github.com/generate_204` 选组内延迟最优（`tolerance: 500` 防组内噪声横跳）——单节点故障内核秒级自愈，脚本不干预。
 
-**judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**两个真实地址** `github.com/generate_204`（主站，返 204）+ `github.githubassets.com/generate_204`（GitHub 网页静态资源走的 Fastly 链路，返 404 但握手成功、照样计时，调 delay API 时传 `expected-status=404`）；**节点分 = 两地址延迟相加**——锚点贴合浏览器真实加载，能区分各国到 Fastly 那跳的快慢。国家分 = 最快 2 个活节点的节点分均值，活节点不足 2 个 = 不可用。
+**judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**两个真实地址** `github.com/robots.txt`（主站，返 200）+ `github.githubassets.com/generate_204`（GitHub 网页静态资源走的 Fastly 链路，返 404 但握手成功、照样计时，调 delay API 时传 `expected-status=404`）；**节点分 = 两地址延迟相加**——锚点贴合浏览器真实加载，能区分各国到 Fastly 那跳的快慢。国家分 = 最快 2 个活节点的节点分均值，活节点不足 2 个 = 不可用。
+
+**T1 不共用组内 url-test 的 URL**（2026-10-15）：内核按 URL 字符串索引节点延迟，judge 若与组内 url-test 同用 `github.com/generate_204`，每轮的并发测速会覆盖 url-test 的决策数据、把它带去次优节点——表现为每 5 分钟组内横跳一次次优节点、约 1 分钟后自愈。改用同域名同链路、不同路径的 `robots.txt` 即解耦，组内选择只由 url-test 自己的周期测速决定。
 
 **防抖**（状态 `/tmp/miniclash_judge.state`）：当前国家实时从 select API 读；连续 2 次（10 分钟）同一别国领先、**且**当前国慢 20%（当前国不可用直接满足）才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
 

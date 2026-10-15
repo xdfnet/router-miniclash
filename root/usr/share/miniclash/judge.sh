@@ -12,7 +12,10 @@ LOG=$WORKDIR/miniclash.log  # 内核 warning + init.d 事件
 SECRET=$(cat $WORKDIR/api_secret 2>/dev/null)
 API=http://127.0.0.1:9090
 
-T1='https://github.com/generate_204'
+# T1 刻意用 robots.txt 而非 generate_204：内核按 URL 索引节点延迟，若与组内 url-test
+# 用同一 URL，judge 每轮的测速结果会覆盖 url-test 的决策数据 → 每 5 分钟组内横跳一次
+# 次优节点（2026-10-15）。同域名同链路、不同路径即可解耦，仍测 GitHub 主站那一跳。
+T1='https://github.com/robots.txt'
 T2='https://github.githubassets.com/generate_204'
 
 get() { uci -q get miniclash.core.$1 2>/dev/null; }
@@ -57,7 +60,7 @@ trap 'rm -rf $TMPD' EXIT
 for c in $(echo "$countries" | tr ',' ' '); do
     for n in $all_names; do
         case "$n" in "$c"*)
-            ( d1=$(probe "$n" "$T1" 204); d2=$(probe "$n" "$T2" 404)
+            ( d1=$(probe "$n" "$T1" 200); d2=$(probe "$n" "$T2" 404)
               echo "$c|$n|${d1:-X}|${d2:-X}" >> $TMPD/results ) &
         ;; esac
     done
