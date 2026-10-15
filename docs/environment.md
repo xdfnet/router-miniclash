@@ -75,6 +75,39 @@ WAN ── eth1 ──▶ ImmortalWrt ── eth0/br-lan ──▶ LAN 设备
 | dnsmasq | `53` | LAN DNS/DHCP |
 | uhttpd | `80` / `443` | Web 管理界面 |
 
+## fnos 备用代理（dfhl / 东方互联）
+
+主机场侧故障时的**单设备兜底**，跑在 fnos 的 Docker 里，与路由器完全独立。
+
+**形态**：官方镜像（非自建）。容器内 `/opt/dfhl/dfhld` 是守护进程，拉起子进程 `/opt/dfhl/sing-box` 做代理内核；配置由 dfhld 运行时生成、不落盘（`/data/state/` 下只有 `cache.db` 与日志）。
+
+| 项 | 值 |
+|---|---|
+| SSH 别名 | `fnos`（`192.168.100.6`，Debian 12 x86_64） |
+| 入口 | `192.168.100.6:10808`（HTTP/SOCKS 混合） |
+| 容器 | `dfhl`（`dfhl:latest`，`network_mode: host`，`cap_drop: ALL`） |
+| compose | `/vol1/docker/dfhl/docker-compose.yml` |
+| 数据卷 | `/vol1/docker/dfhl/data` → 容器 `/data`（`config/`、`state/`） |
+| 自启 | `restart: unless-stopped`（由 docker 守护进程拉起） |
+| 官方镜像包 | `/vol1/dfhl-docker-amd64.tar.gz` |
+
+**用法**（单设备临时走国外）：
+
+```bash
+export https_proxy=http://192.168.100.6:10808
+```
+
+**部署 / 升级**（官方给 tar 包，load 后重建容器即可；`data/` 在卷上，配置与凭据不会丢）：
+
+```bash
+docker load -i /vol1/dfhl-docker-amd64.tar.gz
+cd /vol1/docker/dfhl && docker compose up -d
+```
+
+> **前提：fnos 出网必须绕过 mihomo。** 否则它连上游的流量会被 MINICLASH 链劫持、绕走主代理——主代理一挂，兜底跟着失效，恰在最需要它时不可用（2026-10-16 实证）。放行规则见 [architecture.md](architecture.md) 的「透明代理（iptables）」一节，由 init.d 生成。
+>
+> 账号密码明文存在 compose 的 `environment:`（文件权限 644）。要收紧可改用 `env_file` 并设 600。
+
 ## 常用巡检命令
 
 ```bash
