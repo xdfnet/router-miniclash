@@ -108,6 +108,28 @@ cd /vol1/docker/dfhl && docker compose up -d
 >
 > 账号密码明文存在 compose 的 `environment:`（文件权限 644）。要收紧可改用 `env_file` 并设 600。
 
+**DNS 必须独立（2026-10-16 配死）**：fnos 若用路由器当 DNS，mihomo 会对**所有**域名（含国内）回 fake-ip；而 fnos 已被放行、不经过 mihomo，**没人把假 IP 还原成域名** → 解析全废、dfhld 登录超时。已改为走公网 DNS，写入 NetworkManager：
+
+```ini
+[ipv4]
+dns=223.5.5.5;119.29.29.29;
+ignore-auto-dns=true
+```
+
+改法（root 权限受限时经 docker 提权，admin 在 docker 组）：挂载 `/etc/NetworkManager/system-connections` 改 `Wired connection 1.nmconnection`，再 `nsenter -t 1 -m -p -u -i -n systemctl restart NetworkManager`。备份 `/vol1/nm-backup-20261016.nmconnection`。
+
+**节点要显式指定**：compose 的 `command` 加 `--node 日本`。不指定时 dfhld 用订阅里第一个可用节点，2026-10-16 那次它挑中的新加坡节点已失效，导致全程连不上（备份同名 `.bak-20261016`）。
+
+**排查命令**（容器内，无需密码）：
+
+```bash
+docker exec dfhl /opt/dfhl/dfhld nodes     # 列 6 个节点（新/俄/日/澳/美/阿联酋）
+docker exec dfhl /opt/dfhl/dfhld status    # 当前节点、sing-box PID
+docker exec dfhl /opt/dfhl/dfhld logs -n 50
+```
+
+容器内另有 clash-api（`127.0.0.1:9090`）可查节点与策略组。容器 resolv.conf 是**启动时生成**的，改完宿主 DNS 必须**重建容器**（`docker compose up -d`）才会继承。
+
 ## 常用巡检命令
 
 ```bash
