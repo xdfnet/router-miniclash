@@ -72,6 +72,7 @@ config core 'core'
 | 某线路到个别站点不通（如日本 → gstatic） | 换**线路**（新加坡/日本），同线路换节点无效（共用一个出口） |
 | 整国线路劣化（日本全 EOF / 高延迟） | judge 最多 10 分钟自动切别国；急用手动切：
 `ssh luyou "curl -X PUT -H 'Authorization: Bearer \$(cat /etc/miniclash/api_secret)' -H 'Content-Type: application/json' -d '{\"name\":\"新加坡组\"}' http://127.0.0.1:9090/proxies/自动优选"` |
+| judge 报「无可用国家」，过几分钟自己恢复 | BoostNet 全部节点共用**单一入口 IP**（旧台湾 HiNet），会有 5~15 分钟短窗口的全端口 TCP 阻断并自愈。**窗口 <30 分钟不必操作，>30 分钟才判真封锁**。BusyBox `nc` 探 anytls 端口会被服务端立刻关闭（假阴性），真相源用 judge 探针 + `netstat -tnp \| grep mihomo` 看 ESTABLISHED + Mac 实测。**加国家组防不住入口级阻断**，加固方向是加入口 IP / 备机场 |
 | iPhone / Apple 推送不通 | 订阅 `apple.com,DIRECT` 兜成直连而本网络连不上 Apple → init.d 已自动注入 `push.apple.com → 自动优选`，重启生效 |
 | Microsoft 账号 / OneDrive 登录超时 | 订阅把微软域名兜成 DIRECT → init.d 已注入 → 自动优选，重启生效 |
 | 主机场流量耗尽、需临时访问国外（单设备） | 用 fnos 东方互联 `192.168.100.6:10808`（SOCKS5/HTTP）；CLI 临时 `export https_proxy=http://192.168.100.6:10808` |
