@@ -15,6 +15,7 @@ MiniClash 是部署在 OpenWrt 路由器上的**无界面全屋透明代理**：
 ./scripts/update-subscribe.sh    # 拉订阅 → base64 检测 → 过滤日/新节点 → 上传 → restart（最常用的日常操作）
 ./scripts/update-kernel.sh       # 下载内核+GeoIP 到 root/；--deploy 同步路由器并重启
 ./scripts/traffic.sh              # 查套餐剩余流量/重置/到期（信息条目藏在订阅 proxies 段）
+./scripts/inspect.sh             # 巡检一键取数（9 项巡检，清单与汇报格式见 docs/inspection.md）
 ./scripts/diagnose.sh             # TypeSafe Jev 智能分诊日志（需 TYPESAFE_API_KEY、jq；日志自动脱敏后出网）
 ./scripts/uninstall.sh            # 彻底卸载（交互确认）
 ./scripts/start-proxy.sh          # = ssh luyou '/etc/init.d/miniclash start'（stop 同理）

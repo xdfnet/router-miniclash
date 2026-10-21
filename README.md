@@ -42,6 +42,7 @@ config core 'core'
 | 更新订阅 | `./scripts/update-subscribe.sh`（拉取→过滤日/新→上传→重启，一条龙） |
 | 查套餐流量 | `./scripts/traffic.sh`（剩余 / 重置 / 到期） |
 | 流量走向审计 | `./scripts/traffic-audit.sh [天数]`（代理/直连构成、兜底代理核查） |
+| 巡检（一键取数） | `./scripts/inspect.sh`（9 项巡检取数，判据与汇报格式见 [docs/inspection.md](docs/inspection.md)） |
 | 看裁决历史 | `ssh luyou "tail /etc/miniclash/judge.log"`（每 5 分钟一行） |
 | 内核 / GeoIP 更新 | `./scripts/update-kernel.sh [--deploy]` |
 | 日志智能分诊 | `./scripts/diagnose.sh`（TypeSafe Jev，需 `TYPESAFE_API_KEY` 与 jq） |
