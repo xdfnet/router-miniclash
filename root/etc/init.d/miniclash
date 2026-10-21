@@ -107,9 +107,11 @@ gen_config() {
         # 反向：国内可直连却被 GEOIP 或上面的注入兜进代理的，强制 DIRECT：
         #   hf-mirror.com（东京 SAKURA）、xiaohongshu.com（小红书）、sun-clan.com、
         #   prss.microsoft.com（VSCode 等下载 CDN，国内可直连，须排在 microsoft.com 之前）
+        #   delivery.mp.microsoft.com（Edge 下载 CDN，国内联通节点，实测直连 0.18s vs 代理 0.40s）
         # 注意：注入缩进必须与订阅规则条目一致（awk 动态对齐：旧订阅 4 空格、新订阅 2 空格；缩进不匹配会破坏 YAML）
         if [ -n "$group" ]; then
             EXTRA="    - DOMAIN-SUFFIX,prss.microsoft.com,DIRECT
+    - DOMAIN-SUFFIX,delivery.mp.microsoft.com,DIRECT
     - DOMAIN-SUFFIX,apple.com,$group
     - DOMAIN-SUFFIX,icloud.com,$group
     - DOMAIN-SUFFIX,microsoft.com,$group

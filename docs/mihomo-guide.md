@@ -208,7 +208,7 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 | 类型 | 语义 | MiniClash 用到 |
 |------|------|---------------|
 | `DOMAIN,ad.com,REJECT` | 完整域名精确匹配 | — |
-| `DOMAIN-SUFFIX,google.com,auto` | 域名后缀匹配（含主域名，不匹配 `content-google.com`） | ✅ 注入 Apple/微软/hf-mirror/sun-clan |
+| `DOMAIN-SUFFIX,google.com,auto` | 域名后缀匹配（含主域名，不匹配 `content-google.com`） | ✅ 注入 Apple/微软/hf-mirror/sun-clan/prss.microsoft/delivery.mp.microsoft |
 | `DOMAIN-KEYWORD,google,auto` | 域名关键字匹配 | ✅ 注入 `xiaohongshu`、`officecdn` |
 | `DOMAIN-WILDCARD,*.google.com,auto` | 通配符（`*` 零或多、`?` 单个），与 fake-ip-filter 的通配符不同 | — |
 | `DOMAIN-REGEX,^abc.*com,PROXY` | 域名正则 | — |
@@ -221,7 +221,7 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 | `IN-PORT/IN-TYPE/IN-USER/IN-NAME` | 按入站端口/类型/用户/名匹配 | — |
 | `PROCESS-NAME/PATH*` | 按进程匹配（需 find-process-mode） | — |
 | `NETWORK,udp,DIRECT` | 按协议匹配 | — |
-| `RULE-SET,providername,proxy` | 引用规则集合（rule-providers） | 未用 |
+| `RULE-SET,providername,proxy` | 引用规则集合（rule-providers） | rules 段未用；仅 DNS `nameserver-policy` 用 `rule-set:cn` 走国内 DoH |
 | `AND/OR/NOT` | 逻辑组合规则，注意括号 | 未用 |
 | `SUB-RULE` | 匹配到子规则继续分流 | 未用 |
 | `MATCH,auto` | 匹配所有 | ✅ 订阅兜底 |
@@ -233,7 +233,7 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 1. **订阅 rules 原样直通**（订阅自带 proxy-groups 在本地过滤时已删除，组由 gen_config 统一生成）
 2. **注入 EXTRA 规则**（在 `rules:` 最前，缩进取 rules 首元素对齐）：
    - `DOMAIN-SUFFIX,apple.com/icloud.com/microsoft.com/…,自动优选`（订阅 DIRECT 兜底但本网直连不通的海外服务）
-   - `DOMAIN-KEYWORD,xiaohongshu,DIRECT`、`DOMAIN-SUFFIX,hf-mirror.com/sun-clan.com,DIRECT`（国内可直连却会被兜进代理的）
+   - `DOMAIN-KEYWORD,xiaohongshu,DIRECT`、`DOMAIN-SUFFIX,hf-mirror.com/sun-clan.com,DIRECT`、`DOMAIN-SUFFIX,prss.microsoft.com/delivery.mp.microsoft.com,DIRECT`（国内可直连却会被兜进代理的；后两个须排在 `microsoft.com` 之前）
 3. **订阅默认组引用改指「自动优选」**（`BoostNet`/`🔰国外流量`/`⚓️其他流量` → 自动优选）
 
 **验证**：
