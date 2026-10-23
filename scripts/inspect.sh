@@ -52,7 +52,7 @@ echo
 echo "━━━ 8. 规则库时效 ━━━"
 latest=$(curl -fsSL --max-time 15 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null | grep -m1 '"tag_name"' | cut -d'"' -f4)
 cur=$(cat "$(dirname "$HERE")/.mihomo-version" 2>/dev/null || echo "?")
-[ "$cur" = "$latest" ] && echo "  [OK] 内核 $cur = 上游最新" || echo "  [!!] 内核本地 $cur / 上游 $latest（可跑 update-kernel.sh）"
+[ "$cur" = "$latest" ] && echo "  [OK] 内核 $cur = 上游最新" || echo "  [!!] 内核本地 $cur / 上游 ${latest}（可跑 update-kernel.sh）"
 for f in Country.mmdb cn.mrs; do
   l=$(md5 -q "$(dirname "$HERE")/root/etc/miniclash/$f" 2>/dev/null)
   r=$(ssh "$ROUTER" "md5sum /etc/miniclash/$f 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
