@@ -94,5 +94,6 @@ config core 'core'
 
 - [运行环境与访问方式](docs/environment.md) — 路由器连接、网络拓扑、端口、常用巡检命令
 - [架构说明](docs/architecture.md) — 目录结构、运行时文件、调用链路、自动选优与订阅注入机制（实现细节都在这里）
+- [组内选优](docs/group-selection.md) — 国家 url-test 组怎么选节点、tolerance 取值依据、按带宽择优的坑
 - [mihomo 指南](docs/mihomo-guide.md) — 内核各能力的使用与设计取舍（fake-ip、透明代理、DNS 分流、TLS 指纹）
 - [事故报告：2026-09-01 拨号失败](docs/incident-2026-09-01-boostnet-dial-failure.md) — TLS 指纹超 MSS + GSO 丢段根因
