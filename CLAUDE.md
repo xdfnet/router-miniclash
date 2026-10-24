@@ -42,7 +42,7 @@ mihomo -t -d /etc/miniclash -f /etc/miniclash/config.yaml   # 改完配置必跑
 - 在 rules 顶部注入例外（Apple/微软走代理、hf-mirror/小红书/sun-clan 强制直连）；对无指纹的 flow 节点注入 `client-fingerprint: firefox`。
 
 **两层选优，互不干扰**：
-1. 组内：mihomo 内核 url-test 每 60s 测 GitHub，tolerance 500ms 防抖，单节点故障秒级自愈。
+1. 组内：mihomo 内核 url-test 每 60s 测 GitHub，tolerance 200ms 防抖（2026-10-24 实测定的值：单次采样噪声跨度 546ms、组内节点真值只差 34ms，500 门槛形同虚设），单节点故障秒级自愈。
 2. 跨国：[judge.sh](root/usr/share/miniclash/judge.sh)（cron 每 5 分钟）对每节点实测 GitHub 主站 + githubassets(Fastly) 两地址、延迟相加打分，连续 2 次别国领先且当前国慢 20% 才经 API（9090，secret 在 `/etc/miniclash/api_secret`）PUT 切换。watchdog 只两层展开（select→国家组→节点）上报 `node`，**不驱动切换**。
 3. 开机/重启时 init.d 以 `BOOT=1` 前台跑一次 judge，绕过防抖直选最优国（约 6s）。
 

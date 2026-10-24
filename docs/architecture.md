@@ -104,7 +104,7 @@ start()
 
 **② 自动优选组（select + 国家 url-test）**：从上传订阅提取节点名（过滤在本地完成），按固化国家顺序（日本,新加坡）以前缀归集，在 rules 段前生成——
 - select 主组：`{ name: 自动优选, type: select, proxies: ['日本组','新加坡组'] }`
-- 每国一个 url-test 组：`{ name: 新加坡组, type: url-test, proxies: [新加坡1…], url: 'github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }`
+- 每国一个 url-test 组：`{ name: 新加坡组, type: url-test, proxies: [新加坡1…], url: 'github.com/generate_204', interval: 60, tolerance: 200, expected-status: 200/204 }`
 
 健康检查用 `expected-status: 200/204`：只认真实 204（generate_204 固定返回），防运营商劫持返回假 200 被误判为节点健康。
 
@@ -138,7 +138,7 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 
 ## 自动选优（select 主组 + 国家 url-test + judge 裁决）
 
-主组「自动优选」是 **select** 组，成员是各**国家 url-test 组**（新加坡组/日本组）。国家组每 60s 测 `github.com/generate_204` 选组内延迟最优（`tolerance: 500` 防组内噪声横跳）——单节点故障内核秒级自愈，脚本不干预。
+主组「自动优选」是 **select** 组，成员是各**国家 url-test 组**（新加坡组/日本组）。国家组每 60s 测 `github.com/generate_204` 选组内延迟最优（`tolerance: 200` 防组内噪声横跳，值依 2026-10-24 实测定）——单节点故障内核秒级自愈，脚本不干预。
 
 **judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**两个真实地址** `github.com/robots.txt`（主站，返 200）+ `github.githubassets.com/generate_204`（GitHub 网页静态资源走的 Fastly 链路，返 404 但握手成功、照样计时，调 delay API 时传 `expected-status=404`）；**节点分 = 两地址延迟相加**——锚点贴合浏览器真实加载，能区分各国到 Fastly 那跳的快慢。国家分 = 最快 2 个活节点的节点分均值，活节点不足 2 个 = 不可用。
 
@@ -179,7 +179,7 @@ watchdog 不驱动切换——组内切换交给内核、跨国切换交给 judg
 | 内核/GeoIP 内置 root/ | 一条命令恢复，防 F2FS 吞文件 |
 | select 主组 + 国家 url-test 两层结构 | 单节点故障组内核秒级自愈；整国劣化 judge 裁决可跨国逃生（2026-09-21 旧 fallback 同国备用池无法逃生） |
 | judge 双确认 + 20% margin 才跨国切换 | 杜绝"打地鼠"切换风暴（2026-08-18 教训）与测速噪声误判；最坏 10 分钟延迟 |
-| 国家 url-test 加 `tolerance: 500` | 组内节点延迟接近且波动，须领先 500ms 才切，压住无效切换 |
+| 国家 url-test 加 `tolerance: 200` | 2026-10-24 实测：同一节点单次延迟采样跨度 546ms（345~891ms），组内节点真值仅差 34ms（332~366ms）；500 门槛连领先 389ms 的真慢节点都换不掉，等于锁死，200 才能既识别真劣化又被 ±100ms 典型噪声带不动 |
 | judge 双地址相加（GitHub主站 + githubassets/Fastly） | 单看主站探不到 Fastly 那跳的真实差距；两地址都活才把延迟相加，任一失败不计入 |
 | 自动优选组按国家归集 + GitHub 判据 | 避开订阅「自动选择」组的 gstatic 陷阱（判死日本）与香港（Claude 不通） |
 | 海外被 DIRECT 兜底的服务注入代理 | 订阅把 apple.com / 微软域名兜成 DIRECT，本网络直连海外不通（实测超时），故在 rules 最前注入走代理 |

@@ -122,7 +122,7 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 | `url` | 健康检查测试地址 | `https://github.com/generate_204` |
 | `interval` | 健康检查间隔，不为 0 启用定时测试（秒） | `60` |
 | `lazy` | 默认 `true`：未被选中时不做测速 | 未设（全屋常流量，意义小） |
-| `tolerance` | url-test 切换容差（ms），新候选须领先此值才切 | `500` |
+| `tolerance` | url-test 切换容差（ms），新候选须领先此值才切 | `200` |
 | `expected-status` | 健康检查期望状态码，默认 `*`（任意都算通） | `200/204`（只认真实 204） |
 | `timeout` | 健康检查超时（ms） | 未设（默认 5000） |
 | `max-failed-times` | 最大失败次数，超过触发强制健康检查，默认 5 | 未设 |
@@ -136,12 +136,12 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 - { name: 自动优选, type: select, proxies: ['日本组','新加坡组'] }
 # 国家组：组内 url-test 择优（新加坡8节点、日本8节点，节点本地过滤后上传）
 - { name: 新加坡组, type: url-test, proxies: ['新加坡1',…,'新加坡8'],
-    url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }
+    url: 'https://github.com/generate_204', interval: 60, tolerance: 200, expected-status: 200/204 }
 - { name: 日本组, type: url-test, proxies: ['日本1',…,'日本8'],
-    url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }
+    url: 'https://github.com/generate_204', interval: 60, tolerance: 200, expected-status: 200/204 }
 ```
 
-行为：国家组内单节点劣化 **60s 内自动切**（tolerance 500ms 防组内噪声）；整国劣化由 judge 对 GitHub 主站 + githubassets 双地址（都活才）计时相加实测、**双确认 + 20% margin** 后切国家组（见 architecture.md「自动选优」）。2026-09-01 拨号事故见 [事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
+行为：国家组内单节点劣化 **60s 内自动切**（tolerance 200ms 防组内噪声）；整国劣化由 judge 对 GitHub 主站 + githubassets 双地址（都活才）计时相加实测、**双确认 + 20% margin** 后切国家组（见 architecture.md「自动选优」）。2026-09-01 拨号事故见 [事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
 
 **验证**：
 ```sh
@@ -314,13 +314,13 @@ grep -A2 '日本1' /etc/miniclash/config.yaml | head -5   # 应含 client-finger
 |------|----------|-------------|--------|
 | `url` | 健康检查测试地址 | `github.com/generate_204` | 与真实场景一致；不用订阅的 gstatic（判死日本） |
 | `interval` | 检查间隔（秒），url-test 适用 | `60` | 官方默认 300，机场劣化分钟级，60 已够积极 |
-| `tolerance` | url-test 切换容差（ms） | `500` | 同国节点延迟接近且波动，500 压住测速噪声横跳 |
+| `tolerance` | url-test 切换容差（ms） | `200` | 同国节点延迟接近（真值差 34ms）且单次采样噪声大（跨度 546ms），200 是「识别真劣化」与「不被噪声带偏」之间的有效门槛（2026-10-24 实测） |
 | `expected-status` | 期望响应码，默认 `*` 任意都算通 | `200/204` | 只认真实 204，防劫持假 200 误判健康 |
 | `timeout` | 检查超时（ms），默认 5000 | 未设 | 默认够用 |
 | `max-failed-times` | 超过则强制健康检查，默认 5 | 未设 | 默认即可 |
 | `lazy` | 未选中不测速，默认 true | 未设 | 全屋常流量，省不了多少 |
 
-**关键行为**：url-test 当前节点超时即**立即触发测速切换**（不等整个 interval），tolerance 决定"领先多少才切"。**切换会断连**（在途连接重建），所以组内 500ms 门槛、国家由 judge 双确认 + 20% margin 裁决，是"慢半拍但稳"的定调设计。
+**关键行为**：url-test 当前节点超时即**立即触发测速切换**（不等整个 interval），tolerance 决定"领先多少才切"。**切换会断连**（在途连接重建），所以组内 200ms 门槛、国家由 judge 双确认 + 20% margin 裁决，是"慢半拍但稳"的定调设计。
 
 ---
 

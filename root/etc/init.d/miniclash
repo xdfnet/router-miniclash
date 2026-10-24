@@ -139,9 +139,13 @@ gen_config() {
             gname="${c}组"
             group_names="$group_names,'$gname'"
             qlist=$(for n in $all_names; do case "$n" in ("$c"*) printf "'%s'," "$n";; esac; done | sed 's/,$//')
-            # tolerance 500ms 防组内因测速噪声横跳；expected-status 只认真实 204，防劫持假 200
+            # tolerance 200ms：2026-10-24 实测单次延迟采样跨度可达 546ms（同一节点 6 次
+            # 测出 345~891ms），而组内节点真值只差 34ms（332~366ms）——500 门槛连
+            # 「慢一倍的节点」都换不掉（领先 389ms < 500），200 才是有效门槛：
+            # 真慢节点（领先 389ms）能识别，±100ms 典型噪声带不动。
+            # expected-status 只认真实 204，防劫持假 200
             auto_lines="$auto_lines
-    - { name: $gname, type: url-test, proxies: [$qlist], url: 'https://github.com/generate_204', interval: 60, tolerance: 500, expected-status: 200/204 }"
+    - { name: $gname, type: url-test, proxies: [$qlist], url: 'https://github.com/generate_204', interval: 60, tolerance: 200, expected-status: 200/204 }"
         done
         group_names=$(echo "$group_names" | sed 's/^,//')
         auto_group="    - { name: $group, type: select, proxies: [$group_names] }$auto_lines"
