@@ -26,7 +26,8 @@ ssh "$ROUTER" 'awk "/^rules:/{f=1;next} f&&/^ *- /{print; c++} c>=3{exit}" /etc/
 echo
 echo "━━━ 3. 选优健康 ━━━"
 ssh "$ROUTER" 'echo "  当前节点: $(uci get miniclash.core.node)"; tail -6 /etc/miniclash/judge.log | sed "s/^/  /"' 2>/dev/null
-ssh "$ROUTER" 'grep -o "保持 [^-]*\|切换 [^-]*" /etc/miniclash/judge.log | sort | uniq -c | sed "s/^/  累计裁决: /"' 2>/dev/null
+ssh "$ROUTER" 'grep -oE "保持 [^|]*|→ [^(|]*|紧急切 [^(|]*" /etc/miniclash/judge.log | sed "s/[[:space:]]*$//" | grep -vE "^保持$|^$" | sort | uniq -c | sort -rn | head -5 | sed "s/^/  累计裁决: /"' 2>/dev/null
+ssh "$ROUTER" 't=$(cat /tmp/miniclash_bandwidth.total 2>/dev/null || echo 0); echo "  带宽测速累计消耗: $((t / 1024 / 1024))MB"' 2>/dev/null
 
 echo
 echo "━━━ 4. 流量与套餐 ━━━"

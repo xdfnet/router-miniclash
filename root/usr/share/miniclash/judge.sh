@@ -1,22 +1,36 @@
 #!/bin/sh
-# judge — 跨国线路自动裁决（cron 每 5 分钟）
-# 对每国节点实测 GitHub 主站 + githubassets(Fastly) 两地址，节点分 = 两地址延迟相加；
-# 国家分 = 最快 2 个活节点的节点分均值；
-# 连续 2 次别国领先 20% 才经 API 切换 select 主组——双确认 + margin，防打地鼠横跳。
+# judge — 跨国线路自动裁决（cron 每 15 分钟）
+#
+# 判据是"真实下载带宽"，不是延迟。理由（2026-10-24 实测）：
+#   ① mihomo 的 delay API 只测建连+首字节(TTFB)，不随响应体大小增长，
+#      同一节点同一 URL 1MB 与 8MB 耗时相同 → 它测不出带宽；
+#   ② 延迟与带宽并不同向：日本组真实下载快 41%，延迟却略高于新加坡。
+#      按延迟选会稳定选到慢线路。
+#   带宽由 probe.sh 实测（每个节点一个 pinned listener，下载真实内容测速）。
+#
+# 两层判据，各司其职：
+#   紧急逃生（免费、即时）：读内核 url-test 的 alive 状态——内核自己每 60s 测一次，
+#      本地 API 读，不产生外网流量。当前国活节点 < 2 → 立刻切到活节点最多的国家，
+#      不等带宽测速。
+#   择优：带宽节点分 = 该节点最近 4 次测量的中位数（单次噪声可达 55%，中位数抗噪）；
+#      国家分 = 该国节点分最高的前 2 个的平均；连续 2 次同一候选 + 领先 25% 才切
+#      ——双确认 + margin，防打地鼠横跳。
+#
+# 流量预算：每轮只测 8 个节点（每国 4 个轮转窗口，2 轮覆盖全部 8 个）× 256KB ≈ 2MB/轮，
+#   15 分钟一轮 ≈ 196MB/天（对比全量 16 节点 × 128KB × 5 分钟 ≈ 590MB/天）。
+#   测速必须串行（并发互抢带宽会毁掉排序，2026-10-24 实测）。
+#
 # BOOT=1：开机/重启模式，测一次直接进最优国（绕过双确认），由 init.d start() 调用。
 
 WORKDIR=/etc/miniclash
-STATE=/tmp/miniclash_judge.state
+STATE=/tmp/miniclash_judge.state      # 防抖计数（保持/切换成功时清空）
+ROTF=/tmp/miniclash_judge_rot.state    # 每国测速轮转指针（跨轮保留，不能跟着 STATE 一起清）
+HIST=/tmp/miniclash_bandwidth.state
+TOTALF=/tmp/miniclash_bandwidth.total
 JLOG=$WORKDIR/judge.log     # judge 裁决历史（独立文件，不被内核 warning 淹没）
 LOG=$WORKDIR/miniclash.log  # 内核 warning + init.d 事件
 SECRET=$(cat $WORKDIR/api_secret 2>/dev/null)
 API=http://127.0.0.1:9090
-
-# T1 刻意用 robots.txt 而非 generate_204：内核按 URL 索引节点延迟，若与组内 url-test
-# 用同一 URL，judge 每轮的测速结果会覆盖 url-test 的决策数据 → 每 5 分钟组内横跳一次
-# 次优节点（2026-10-15）。同域名同链路、不同路径即可解耦，仍测 GitHub 主站那一跳。
-T1='https://github.com/robots.txt'
-T2='https://github.githubassets.com/generate_204'
 
 get() { uci -q get miniclash.core.$1 2>/dev/null; }
 log() { echo "[$(date '+%F %T')] [judge] $*" >> $JLOG; }
@@ -26,6 +40,7 @@ log() { echo "[$(date '+%F %T')] [judge] $*" >> $JLOG; }
 group=$(get group); group=${group:-自动优选}
 # 参与裁决的国家（有序，第 1 个为 select 默认；单一场景固化）
 countries=日本,新加坡
+country_list=$(echo "$countries" | tr ',' ' ')
 
 # URL 编码（逐字节；中文 UTF-8 按字节编码正是所需）
 urlencode() {
@@ -41,97 +56,188 @@ urlencode() {
     echo "$out"
 }
 
-# probe <节点> <目标> <期望状态码> → 延迟 ms；失败空串
-probe() {
-    curl -s --max-time 6 -H "Authorization: Bearer $SECRET" \
-        "$API/proxies/$(urlencode "$1")/delay?url=$(urlencode "$2")&timeout=5000&expected-status=$3" \
-        | grep -oE '"delay":[0-9]+' | cut -d: -f2
-}
-
 # 节点名归集（与 init.d gen_config 同一规则）
 all_names=$(awk '/^proxies:/{p=1;next}/^[a-z-]+:/{p=0}p' $WORKDIR/subscribe.yaml \
     | grep -oE "name: [^,}]+" | sed "s/name: //; s/^'//; s/'$//")
 
-TMPD=/tmp/miniclash_judge.$$
-mkdir -p $TMPD
-trap 'rm -rf $TMPD' EXIT
-
-# 每节点并发双地址探测，结果: 国家|节点|主站延迟|assets延迟（X=失败）
-for c in $(echo "$countries" | tr ',' ' '); do
-    for n in $all_names; do
-        case "$n" in "$c"*)
-            ( d1=$(probe "$n" "$T1" 200); d2=$(probe "$n" "$T2" 404)
-              echo "$c|$n|${d1:-X}|${d2:-X}" >> $TMPD/results ) &
-        ;; esac
-    done
-done
-wait
-
-# score <国家> → 最快 2 活节点的(两地址)总分均值；活节点不足 2 个 = X（不可用）
-score() {
-    awk -F'|' -v c="$1" '$1==c && $3!="X" && $4!="X"{print $3+$4}' $TMPD/results \
-        | sort -n | head -2 \
-        | awk '{s+=$1;n++} END{if(n>=2) printf "%d",s/2; else print "X"}'
+# 该国节点列表（订阅顺序）
+nodes_of() {
+    for n in $all_names; do case "$n" in "$1"*) echo "$n" ;; esac; done
 }
 
-# 当前国家（select now = 国家组名，去掉"组"）
-current=$(curl -s --max-time 3 -H "Authorization: Bearer $SECRET" \
-    "$API/proxies/$(urlencode "$group")" | grep -oE '"now":"[^"]+"' | cut -d'"' -f4)
-cur_c=${current%组}
-cur_s=$(score "$cur_c")
+# 内核 url-test 每 60s 自测的健康状态（本地 API 读，不产生外网流量）
+alive_of() {
+    curl -s --max-time 3 -H "Authorization: Bearer $SECRET" \
+        "$API/proxies/$(urlencode "$1")" | grep -q '"alive":true' && echo 1 || echo 0
+}
 
-# best = 分数最低的可用国家；summary 汇总各国分数供每次落日志
-best=; best_s=; summary=
-for c in $(echo "$countries" | tr ',' ' '); do
-    s=$(score "$c")
-    echo "  $c: ${s}ms"
-    summary="$summary $c:${s}ms,"
-    [ "$s" != X ] && { [ -z "$best_s" ] || [ "$s" -lt "$best_s" ]; } && { best=$c; best_s=$s; }
+# 该国活节点数
+alive_count() {
+    c=$1; n=0
+    for node in $(nodes_of "$c"); do
+        a=$(alive_of "$node")
+        n=$((n + a))
+    done
+    echo $n
+}
+
+# 读取/设置主 select 组的选中项
+get_group() {
+    curl -s --max-time 3 -H "Authorization: Bearer $SECRET" \
+        "$API/proxies/$(urlencode "$1")" | grep -oE '"now":"[^"]+"' | cut -d'"' -f4
+}
+set_group() {
+    curl -s --max-time 5 -X PUT -H "Authorization: Bearer $SECRET" \
+        -H 'Content-Type: application/json' -d "{\"name\":\"$2\"}" \
+        "$API/proxies/$(urlencode "$1")" >/dev/null 2>&1
+}
+
+# 节点带宽分 = 最近 4 次测量的中位数（单次噪声大，中位数抗噪）
+node_bw() {
+    v=$(awk -v n="$1" '
+        $1==n {
+            m=0
+            for(i=2;i<=NF;i++) if($i+0>0) buf[m++]=$i+0
+            if(m==0){print 0; exit}
+            for(i=0;i<m;i++) for(j=i+1;j<m;j++) if(buf[j]<buf[i]){t=buf[i];buf[i]=buf[j];buf[j]=t}
+            if(m%2) printf "%d", buf[int(m/2)]
+            else printf "%d", (buf[m/2-1]+buf[m/2])/2
+            exit
+        }' "$HIST" 2>/dev/null)
+    echo "${v:-0}"
+}
+
+# 国家带宽分 = 该国节点分最高的前 2 个的平均（活节点不足 2 个 = 0，视为不可用）
+country_bw() {
+    for node in $(nodes_of "$1"); do
+        s=$(node_bw "$node")
+        [ -n "$s" ] && [ "$s" -gt 0 ] && echo "$s"
+    done | sort -rn | head -2 | awk '{t+=$1;n++} END{if(n>=2) printf "%d", t/2; else print 0}'
+}
+
+# 本轮要测的节点：每国取 4 个轮转窗口（窗口起点每轮 +4，2 轮覆盖该国全部节点）
+sel_nodes() {
+    c=$1; start=$2
+    nodes=$(nodes_of "$c")
+    cnt=$(echo "$nodes" | grep -c .)
+    [ "$cnt" -gt 0 ] || return 0
+    win=4; [ "$cnt" -lt "$win" ] && win=$cnt
+    rot=$(echo "$nodes" | tail -n +$((start + 1)))
+    if [ "$(echo "$rot" | grep -c .)" -lt "$cnt" ]; then
+        rot="$rot $(echo "$nodes" | head -n "$start")"
+    fi
+    echo "$rot" | head -"$win" | tr '\n' ' '
+}
+
+# 探测累计流量（机场配额消耗），并入裁决行随日志留痕
+probe_note() {
+    tb=$(cat "$TOTALF" 2>/dev/null || echo 0)
+    echo " | 探测累计 $((tb / 1024 / 1024))MB"
+}
+
+# 状态文件（防抖计数 + 每国轮转指针）
+[ -f $STATE ] && . $STATE
+[ -f $ROTF ] && . $ROTF
+PENDING=${PENDING:-}; COUNT=${COUNT:-0}
+
+current=$(get_group "$group")
+cur_c=${current%组}
+
+# ── ① 紧急逃生：当前国活节点不足 2 个 → 立刻切到活节点最多的国家（不测带宽，省流量）──
+cur_alive=$(alive_count "$cur_c")
+if [ "$cur_alive" -lt 2 ]; then
+    ba=0; bc=
+    for c in $country_list; do
+        a=$(alive_count "$c")
+        [ "$a" -gt "$ba" ] && { ba=$a; bc=$c; }
+    done
+    if [ -n "$bc" ] && [ "$ba" -ge 2 ]; then
+        set_group "$group" "${bc}组"
+        log "$cur_c 活节点 $cur_alive(<2) | 紧急切 $bc(活节点 $ba)$(probe_note)"
+        rm -f $STATE
+        exit 0
+    fi
+    log "$cur_c 活节点 $cur_alive(<2) | 两国都不足 2 活节点，保持 $cur_c$(probe_note)"
+    exit 0
+fi
+
+# ── ② 带宽择优：先测速，再按带宽分裁决 ──
+if [ "$BOOT" = 1 ]; then
+    # 开机模式：测全部节点（一次性流量，换开机即选到最优国）
+    measure=""
+    for c in $country_list; do
+        measure="$measure $(nodes_of "$c")"
+    done
+else
+    # 常规模式：每国 4 个轮转窗口
+    measure=""
+    ci=0
+    for c in $country_list; do
+        ci=$((ci + 1))
+        eval "rot=\${ROT$ci:-0}"
+        cnt=$(nodes_of "$c" | grep -c .)
+        win=4; [ "$cnt" -lt "$win" ] && win=$cnt
+        measure="$measure $(sel_nodes "$c" "$rot")"
+        eval "ROT$ci=$(( (rot + win) % cnt ))"
+    done
+    # 轮转指针单独存一份（STATE 会在"保持/切换"分支被清空，指针不能跟着没）
+    {
+        i=0
+        for c in $country_list; do
+            i=$((i + 1))
+            eval "v=\${ROT$i:-0}"
+            echo "ROT$i=$v"
+        done
+    } > $ROTF
+fi
+measure=$(echo $measure)
+
+[ -n "$measure" ] || { log "无待测节点，保持 $cur_c"; exit 0; }
+/usr/share/miniclash/probe.sh $measure >/dev/null 2>&1
+
+best=; best_s=0; summary=
+for c in $country_list; do
+    s=$(country_bw "$c")
+    summary="$summary $c:${s}B/s,"
+    [ "$s" -gt 0 ] && { [ -z "$best" ] || [ "$s" -gt "$best_s" ]; } && { best=$c; best_s=$s; }
 done
 summary=$(echo "$summary" | sed 's/,$//;s/^ //')
+cur_s=$(country_bw "$cur_c")
 
 if [ -z "$best" ]; then
-    rm -f $STATE
-    log "$summary | 无可用国家，保持 $cur_c"
+    log "$summary | 无可用国家，保持 $cur_c$(probe_note)"
 elif [ "$best" = "$cur_c" ]; then
     rm -f $STATE
-    log "$summary | 保持 $cur_c"
+    log "$summary | 保持 $cur_c$(probe_note)"
+elif [ "$BOOT" = 1 ]; then
+    # 开机模式：主组默认成员是任意的，测一次直接进最优国，不走防抖
+    set_group "$group" "${best}组"
+    log "$summary | 开机直选 $best(${best_s}B/s)$(probe_note)"
+    rm -f $STATE
+    echo "  → 开机直选 $best"
 else
-    if [ "$BOOT" = 1 ]; then
-        # 开机模式：select 默认国家是任意的，测一次直接进最优国，不走防抖
-        curl -s -X PUT --max-time 5 \
-            -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
-            -d "{\"name\":\"${best}组\"}" "$API/proxies/$(urlencode "$group")"
-        log "$summary | 开机直选 $best(${best_s}ms)"
-        rm -f $STATE
-        echo "  → 开机直选 $best"
-    else
-        # 防抖：连续 2 次同一候选 + margin（current 不可用，或比 best 慢 20%）
-        PENDING=; COUNT=0
-        [ -f $STATE ] && . $STATE
-        [ "$PENDING" = "$best" ] && COUNT=$((COUNT+1)) || { PENDING=$best; COUNT=1; }
-
-        switched=0
-        if [ $COUNT -ge 2 ]; then
-            margin=0
-            if [ "$cur_s" = X ]; then margin=1
-            elif [ $((cur_s*10)) -ge $((best_s*12)) ]; then margin=1; fi
-            if [ $margin -eq 1 ]; then
-                curl -s -X PUT --max-time 5 \
-                    -H "Authorization: Bearer $SECRET" -H "Content-Type: application/json" \
-                    -d "{\"name\":\"${best}组\"}" "$API/proxies/$(urlencode "$group")"
-                log "$summary | $cur_c(${cur_s}ms) → $best(${best_s}ms)"
-                rm -f $STATE
-                echo "  → 已切换到 $best"
-                switched=1
-            fi
+    # 防抖：连续 2 次同一候选 + margin（当前国无数据，或比最优慢 25%）
+    [ "$PENDING" = "$best" ] && COUNT=$((COUNT + 1)) || { PENDING=$best; COUNT=1; }
+    switched=0
+    if [ "$COUNT" -ge 2 ]; then
+        margin=0
+        if [ "$cur_s" -eq 0 ]; then
+            margin=1
+        elif [ $((cur_s * 4)) -le $((best_s * 3)) ]; then
+            margin=1
         fi
-        if [ $switched -eq 0 ]; then
-            echo "PENDING=$PENDING
+        if [ "$margin" -eq 1 ]; then
+            set_group "$group" "${best}组"
+            log "$summary | $cur_c(${cur_s}B/s) → $best(${best_s}B/s)$(probe_note)"
+            rm -f $STATE
+            echo "  → 已切换到 $best"
+            switched=1
+        fi
+    fi
+    if [ "$switched" -eq 0 ]; then
+        echo "PENDING=$PENDING
 COUNT=$COUNT" > $STATE
-            log "$summary | 候选 $best $COUNT/2，暂不切换"
-            echo "  → 候选 $best，连续确认 $COUNT/2，暂不切换"
-        fi
+        log "$summary | 候选 $best $COUNT/2，暂不切换$(probe_note)"
     fi
 fi
 

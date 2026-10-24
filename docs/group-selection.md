@@ -139,5 +139,11 @@ ssh luyou 'S=$(cat /etc/miniclash/api_secret); \
 要重做这一块时，最小正确形态：**串行或低并发 + 每节点重复 3 次取中位数 + 样本放到 1MB 量级 +
 切换门槛提到 50% 以上且只在明显优势时切**。
 
-存档：改造版完整实现（含 `probe.sh`、fallback 改造、judge 接线）在分支
-`feature/bandwidth-selection`（commit `08ce431`），未部署，仅供参考。
+**2026-10-24 更新**：上面这套方法学已在**跨国层**落地（judge 改用带宽判据），见
+[跨国选优](country-selection.md)。**组内仍未改**——国家组仍是 url-test，
+按延迟选节点。要让组内也按带宽择优，只能把国家组改成 select（judge PUT 可用），代价是失去
+内核自愈（节点挂了要等 judge 下一轮）。是否值得，等组内延迟判据真的造成困扰时再定。
+
+被否决的「国家组改 fallback + judge 直接指定节点」那版实现留在分支
+`feature/bandwidth-selection`（commit `08ce431`，未部署）：fallback 组不吃 API 的 PUT，
+组内择优是空转。

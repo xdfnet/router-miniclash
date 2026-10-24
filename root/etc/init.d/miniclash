@@ -190,7 +190,21 @@ gen_config() {
         ' $SUBSCRIBE
     } > $CONFIG
 
+    # 追加 listeners 段：每个节点一个本地 HTTP 监听端口，用 proxy: 字段钉死到该节点。
+    # judge.sh 据此实测每节点真实带宽（经该端口下载即走该节点，不干扰线上流量）——
+    # mihomo 的 delay API 只测 TTFB 测不出带宽，必须靠真实下载测（见 probe.sh 注释）。
+    # 端口从 9100 起顺延，只绑 127.0.0.1，不对外暴露。
+    {
+        echo "listeners:"
+        port=9100
+        for n in $all_names; do
+            echo "    - { name: probe-${n}, type: http, port: $port, listen: 127.0.0.1, proxy: '$n' }"
+            port=$((port + 1))
+        done
+    } >> $CONFIG
+
     grep -q '^proxy-groups:' $CONFIG || { log "配置缺少 proxy-groups"; return 1; }
+    grep -q '^listeners:' $CONFIG || { log "配置缺少 listeners"; return 1; }
     log "配置已生成"
     return 0
 }
@@ -307,14 +321,16 @@ start() {
     # 关闭 WAN 接口 GSO/TSO：mihomo 隧道内 TLS record 超 MSS 被网卡合并大包，中间设备丢前段
     # → 大流量传输间歇失败（2026-09-01 根因之二，配合 client-fingerprint 注入解决握手层）
     ethtool -K eth1 gso off tso off 2>/dev/null
-    # 幂等安装 cron：judge 每 5 分钟跨国裁决；meter 每分钟采样字节（分析哪些不该走代理）
-    grep -q judge.sh /etc/crontabs/root 2>/dev/null || \
-        echo '*/5 * * * * /usr/share/miniclash/judge.sh' >> /etc/crontabs/root
+    # 幂等安装 cron：judge 每 15 分钟跨国裁决（判据是带宽测速，流量开销大，频率低）；
+    # meter 每分钟采样字节（分析哪些不该走代理）。
+    # judge 行每次重写——频率会调，只 grep 存在性会留下旧频率的行。
+    sed -i '/judge\.sh/d' /etc/crontabs/root 2>/dev/null
+    echo '*/15 * * * * /usr/share/miniclash/judge.sh' >> /etc/crontabs/root
     grep -q meter.sh /etc/crontabs/root 2>/dev/null || \
         echo '* * * * * /usr/share/miniclash/meter.sh' >> /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
     log "已启动 (PID $(pidof mihomo))"
-    # 开机/重启即测一次，直接进当前最优国家（BOOT 模式绕过双确认；阻塞约 6s）
+    # 开机/重启即测一次，直接进当前最优国家（BOOT 模式测全部节点，阻塞约 30s）
     BOOT=1 /usr/share/miniclash/judge.sh >/dev/null 2>&1
     return 0
 }

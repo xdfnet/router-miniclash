@@ -43,14 +43,15 @@ mihomo -t -d /etc/miniclash -f /etc/miniclash/config.yaml   # 改完配置必跑
 
 **两层选优，互不干扰**：
 1. 组内：mihomo 内核 url-test 每 60s 测 GitHub，tolerance 200ms 防抖（2026-10-24 实测定的值：单次采样噪声跨度 546ms、组内节点真值只差 34ms，500 门槛形同虚设），单节点故障秒级自愈。
-2. 跨国：[judge.sh](root/usr/share/miniclash/judge.sh)（cron 每 5 分钟）对每节点实测 GitHub 主站 + githubassets(Fastly) 两地址、延迟相加打分，连续 2 次别国领先且当前国慢 20% 才经 API（9090，secret 在 `/etc/miniclash/api_secret`）PUT 切换。watchdog 只两层展开（select→国家组→节点）上报 `node`，**不驱动切换**。
-3. 开机/重启时 init.d 以 `BOOT=1` 前台跑一次 judge，绕过防抖直选最优国（约 6s）。
+2. 跨国：[judge.sh](root/usr/share/miniclash/judge.sh)（cron 每 15 分钟）以**真实下载带宽**为判据——[probe.sh](root/usr/share/miniclash/probe.sh) 经 config.yaml 的 `listeners` 段（每个节点一个钉死的本地端口）**串行**实测 256KB 下载速度，节点分取最近 4 次中位数、国家分取该国前 2 名均值；连续 2 次别国领先 25% 才经 API（9090，secret 在 `/etc/miniclash/api_secret`）PUT 切换。当前国活节点 < 2 时读内核 alive 状态零流量紧急逃生。watchdog 只两层展开（select→国家组→节点）上报 `node`，**不驱动切换**。
+3. 开机/重启时 init.d 以 `BOOT=1` 前台跑一次 judge（测全部节点），绕过防抖直选最优国（约 30s）。
 
 **订阅本地过滤**：路由器不保存订阅地址（`subscription.url` 只在 Mac）。[update-subscribe.sh](scripts/update-subscribe.sh) 过滤后**强校验必须为 16 个日/新节点**，不符即拒绝上传。
 
 ## 修改时的高风险点
 
 - **国家清单有两处，必须同步**：init.d `gen_config()` 和 judge.sh 里各自硬编码 `countries=日本,新加坡`（顺序第一国为 select 默认）。节点归集前缀规则也两处重复。
+- **测速底座耦合点**：init.d 生成的 `listeners` 段（每节点一个 pinned 端口，9100 起）是 probe.sh 测带宽的唯一入口——改了节点归集规则或端口起点，两边必须同步，否则 probe 静默测不到（国家分变 0）。测速**必须串行**，并发会互抢带宽毁掉排序。
 - **YAML 注入缩进逐字节一致**：注入的规则/组行缩进由 awk 取 `rules:` 首元素缩进动态对齐（旧订阅 4 空格、新订阅 2 空格）。缩进错位会吞掉后续所有规则，表现为 `proxy [自动优选...] not found`。
 - **iptables 只劫持 PREROUTING**（LAN 转发），绝不劫持本机出站——否则内核连节点被重定向回自己形成自环（`context deadline exceeded`）。
 - 内核（~55M）与 Country.mmdb（~8M）**不入库**（.gitignore），本地缺失时 install.sh 自动调 update-kernel.sh；本地版本靠 `.mihomo-version` 标记对比（Mac 无法运行 linux 二进制）。

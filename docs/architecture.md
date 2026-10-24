@@ -11,7 +11,7 @@
   │ UCI 配置 → init.d start()                            │
   │   ├─ gen_config()   头部 + 组生成 + 规则注入          │
   │   ├─ start_watchdog() 每 60s 上报当前节点 → uci      │
-  │   ├─ judge.sh cron  每 5min 双地址打分 → 跨国裁决    │
+  │   ├─ judge.sh cron  每 15min 带宽测速打分 → 跨国裁决 │
   │   └─ ipt_start / dns_start  建立劫持与 DNS          │
   └──────────────┬──────────────────────┬──────────────┘
                  │ REST API (9090)      │ 写配置文件
@@ -46,7 +46,8 @@ root/etc/miniclash/cn.mrs      GeoSite 国内域名集【不入库，update-kern
 root/usr/bin/mihomo            内核二进制【不入库，update-kernel.sh 下载】
                                来源 mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz
                                （两文件本地放此处，install.sh 缺失自动补齐；损坏自动重灌）
-root/usr/share/miniclash/judge.sh 跨国裁决（cron 每 5 分钟，双地址相加 + 防抖）
+root/usr/share/miniclash/judge.sh 跨国裁决（cron 每 15 分钟，带宽判据 + 双确认防抖）
+root/usr/share/miniclash/probe.sh 节点带宽实测底座（judge 调用；串行 256KB 下载）
 root/usr/share/miniclash/meter.sh 流量字节计量（cron 每分钟，采样连接 API 算字节增量）
 scripts/install.sh             root/ → 路由器 / 同步（不覆盖 UCI 配置）
 scripts/update-kernel.sh       下载/更新内核 + GeoIP 到 root/（--deploy 同步并重启）
@@ -140,15 +141,31 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 
 主组「自动优选」是 **select** 组，成员是各**国家 url-test 组**（新加坡组/日本组）。国家组每 60s 测 `github.com/generate_204` 选组内延迟最优（`tolerance: 200` 防组内噪声横跳，值依 2026-10-24 实测定）——单节点故障内核秒级自愈，脚本不干预。
 
-组内机制的细节、tolerance 的取值依据、内核 url-test 的已知边界与「按带宽择优」的坑，见 [组内选优](group-selection.md)。
+组内机制的细节、tolerance 的取值依据与内核 url-test 的已知边界，见 [组内选优](group-selection.md)；跨国裁决的判据、测速方法、防抖与流量预算，见 [跨国选优](country-selection.md)。
 
-**judge 跨国裁决**（`/usr/share/miniclash/judge.sh`，cron 每 5 分钟）：起因 2026-09-21 日本整国劣化 4+ 小时，旧 fallback 结构的备用池全是同国节点，结构上无法逃生。judge 对每国每节点实测**两个真实地址** `github.com/robots.txt`（主站，返 200）+ `github.githubassets.com/generate_204`（GitHub 网页静态资源走的 Fastly 链路，返 404 但握手成功、照样计时，调 delay API 时传 `expected-status=404`）；**节点分 = 两地址延迟相加**——锚点贴合浏览器真实加载，能区分各国到 Fastly 那跳的快慢。国家分 = 最快 2 个活节点的节点分均值，活节点不足 2 个 = 不可用。
+**judge 跨国裁决，判据 = 真实下载带宽**（`/usr/share/miniclash/judge.sh`，cron 每 15 分钟）。
 
-**T1 不共用组内 url-test 的 URL**（2026-10-15）：内核按 URL 字符串索引节点延迟，judge 若与组内 url-test 同用 `github.com/generate_204`，每轮的并发测速会覆盖 url-test 的决策数据、把它带去次优节点——表现为每 5 分钟组内横跳一次次优节点、约 1 分钟后自愈。改用同域名同链路、不同路径的 `robots.txt` 即解耦，组内选择只由 url-test 自己的周期测速决定。
+起因（2026-10-24 实测）：mihomo 的 delay API 只测建连+首字节(TTFB)，同一节点同一 URL 1MB 与 8MB 耗时相同 → **测不出带宽**；而延迟与带宽并不同向——抗噪后实测日本组真实下载快 41%，延迟却略高于新加坡。按延迟选会稳定选到慢线路。
 
-**防抖**（状态 `/tmp/miniclash_judge.state`）：当前国家实时从 select API 读；连续 2 次（10 分钟）同一别国领先、**且**当前国慢 20%（当前国不可用直接满足）才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
+带宽由 `probe.sh` 实测：
 
-**开机直选（BOOT 模式）**：select 启动默认固定选第一个成员（新加坡），并非实时最优。init.d start() 末尾以 `BOOT=1` 前台跑一次 judge，绕过双确认、按实测分数直接 PUT 进最优国家（约 6s）；若两国都不可用则安全保持默认。cron 常规轮次不带 BOOT，防抖不变。
+- **测速底座**：每个节点在 config.yaml 的 `listeners` 段有一个钉死到它的本地 HTTP 端口（`proxy: <节点名>`，只绑 127.0.0.1，端口 9100 起）。经该端口下载即走该节点 → 得到该节点的真实下载速度，且不干扰线上流量。端口↔节点映射直接读配置的 listeners 段——**配置是唯一事实来源**，不另建映射表。
+- 探测目标 GitHub raw 的 MAINTAINERS，取前 256KB（Range）。
+- **必须串行测**：并发会互相抢带宽，排序完全失真（同一批节点并发测日本3 第一、串行测日本1 第一）。
+- 单次采样噪声可达 55%，历史保留最近 4 次，**节点分取中位数**。
+
+判据两层，各司其职：
+
+1. **紧急逃生（零流量、即时）**：读内核 url-test 的 alive 状态——内核自己每 60s 测一次，本地 API 读，不产生外网流量。当前国活节点 < 2 → 立刻切到活节点最多的国家，不等带宽测速。
+2. **择优**：国家分 = 该国节点分最高**前 2 个的平均**（活节点不足 2 个 = 不可用）；连续 2 次同一别国领先、**且**领先 25% 才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
+
+**流量预算**：每轮只测 8 个节点（每国 4 个轮转窗口，2 轮覆盖全部 8 个）× 256KB ≈ 2MB/轮，15 分钟一轮 ≈ **196MB/天**（对比全量 16 节点 × 128KB × 5 分钟 ≈ 590MB/天）。累计消耗记在 `/tmp/miniclash_bandwidth.total`，巡检可见。
+
+**新增测速手段必须与内核 url-test 的 URL 解耦**（2026-10-15 教训）：内核按 URL 字符串索引节点延迟，judge 若与组内 url-test 同用 `github.com/generate_204`，并发测速会覆盖 url-test 的决策数据、把它带去次优节点——表现为组内每 5 分钟横跳一次次优节点。当前带宽测速走独立的 pinned listener，不碰内核的 URL 索引，天然解耦。
+
+**防抖**（状态 `/tmp/miniclash_judge.state`）：当前国家实时从 select API 读；连续 2 次（30 分钟）同一别国领先、且当前国慢 25%（当前国无数据直接满足）才切换。轮转指针另存 `/tmp/miniclash_judge_rot.state`——防抖状态在"保持/切换"时会被清空，指针不能跟着清。
+
+**开机直选（BOOT 模式）**：select 启动默认固定选第一个成员（新加坡），并非实时最优。init.d start() 末尾以 `BOOT=1` 前台跑一次 judge，测**全部**节点、绕过双确认直接 PUT 进最优国家（约 30s）。
 
 **每轮落日志**：judge 每次运行（含未切换）都在独立的 judge.log 记一行 `[judge] 新加坡:291ms, 日本:413ms | 保持 新加坡`，巡检直接 tail 回溯；独立文件避免被量大的内核 warning 冲掉历史。两份日志超 512KB 都按行原地截断（judge.log 留 2500 行 ≈ 8.7 天、miniclash.log 留 800 行），不切半行、inode 不变，防撑爆闪存且不影响 mihomo 持续写入。
 
@@ -180,10 +197,11 @@ watchdog 不驱动切换——组内切换交给内核、跨国切换交给 judg
 | 订阅本地过滤：base64 检测 + 16 节点数强校验 | 订阅常被 base64 包裹；强校验必须为 16 个日/新节点（在册仅日/新两国），不符立即拒绝，防脏订阅上传 |
 | 内核/GeoIP 内置 root/ | 一条命令恢复，防 F2FS 吞文件 |
 | select 主组 + 国家 url-test 两层结构 | 单节点故障组内核秒级自愈；整国劣化 judge 裁决可跨国逃生（2026-09-21 旧 fallback 同国备用池无法逃生） |
-| judge 双确认 + 20% margin 才跨国切换 | 杜绝"打地鼠"切换风暴（2026-08-18 教训）与测速噪声误判；最坏 10 分钟延迟 |
+| judge 双确认 + 25% margin 才跨国切换 | 杜绝"打地鼠"切换风暴（2026-08-18 教训）与测速噪声误判；最坏 30 分钟延迟 |
 | 国家 url-test 加 `tolerance: 200` | 2026-10-24 实测：同一节点单次延迟采样跨度 546ms（345~891ms），组内节点真值仅差 34ms（332~366ms）；500 门槛连领先 389ms 的真慢节点都换不掉，等于锁死，200 才能既识别真劣化又被 ±100ms 典型噪声带不动 |
-| judge 双地址相加（GitHub主站 + githubassets/Fastly） | 单看主站探不到 Fastly 那跳的真实差距；两地址都活才把延迟相加，任一失败不计入 |
+| 跨国判据用真实下载带宽而非延迟 | delay API 只测 TTFB 测不出带宽；实测日本组带宽快 41% 而延迟更慢，按延迟选会稳定选到慢线路 |
 | 自动优选组按国家归集 + GitHub 判据 | 避开订阅「自动选择」组的 gstatic 陷阱（判死日本）与香港（Claude 不通） |
+| 测速走 listeners 的 pinned 端口、必须串行 | 并发测速互相抢带宽、排序失真（2026-10-24 实测）；pinned 端口不干扰线上流量 |
 | 海外被 DIRECT 兜底的服务注入代理 | 订阅把 apple.com / 微软域名兜成 DIRECT，本网络直连海外不通（实测超时），故在 rules 最前注入走代理 |
 | 无指纹节点注入 `client-fingerprint: firefox` | 默认指纹 ClientHello 超 MSS，路由器 GSO 合并大包被中间设备丢前段 → 握手超时（2026-09-01 拨号全灭根因）；firefox 指纹包小单段不分片 |
 | 关闭 WAN GSO/TSO | 隧道内 TLS record 超 MSS 被网卡合并大包、中间设备丢前段，配合指纹注入根治大数据传输间歇失败 |
