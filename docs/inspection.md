@@ -23,11 +23,14 @@
   改 init.d 的 `EXTRA` 块后必须 `mihomo -t` 再 restart
 
 ### 3. 选优健康
-- **取数**：`uci get miniclash.core.node`；`/etc/miniclash/judge.log` 近 12 轮 + 全量裁决类型分布
-- **判据**：当前节点与最近裁决一致；judge 每 5 分钟一轮无断档；
-  裁决以「保持」为主，少量「切换」属正常自愈
-- **异常处置**：频繁切换 = 两国延迟接近或节点劣化，看 judge.log 的延迟差值；
-  裁决断档 = judge cron 没跑，查 init.d 的 cron 注册
+- **取数**：`uci get miniclash.core.node`；`/etc/miniclash/judge.log` 近 12 轮 + 全量裁决类型分布；
+  `/tmp/miniclash_bandwidth.total`（探测累计流量）
+- **判据**：当前节点与最近裁决一致；judge **每 15 分钟一轮**无断档；
+  裁决以「保持」为主，少量「切换」属正常自愈；探测累计流量应稳定在 ~200MB/天量级
+- **异常处置**：频繁切换 = 两国**带宽**接近或节点劣化，看 judge.log 的带宽差值
+  （判据是真实下载带宽，不是延迟——见 [跨国选优](country-selection.md)）；
+  裁决断档 = judge cron 没跑，查 init.d 的 cron 注册；
+  探测流量异常增长 = 轮转或样本量出了问题
 
 ### 4. 流量与套餐
 - **取数**：`./scripts/traffic.sh`
@@ -47,12 +50,19 @@
   - `context deadline exceeded` / `EOF` / `i/o timeout` → 机场入口间歇阻断，短时自愈
   - `dns resolve failed` → 确认目标域，多为子域本就不解析
   - `context canceled` → 上游主动取消
+  - `dial tcp 17.x.x.x:5223 i/o timeout` → Apple 推送。订阅自带 `IP-CIDR,17.0.0.0/8,DIRECT`
+    排在注入的 `DOMAIN-SUFFIX,apple.com` 之前，先命中直连；客户端用真实 IP 时
+    域名规则也匹配不到 → 推送超时但不致命，属已知现象
 - **异常处置**：出现归不了类的类型，或某类型条数较上轮成倍增长 → 展开逐条看
 
 ### 7. 出网实测
 - **取数**：Mac 侧 `curl` 测四条路径——代理域（github.com、hf-mirror.com）、
   直连域（www.baidu.com、registry.npmmirror.com）
 - **判据**：全部 http=200；代理域解析到 fake-ip 段 `198.18.0.0/16`
+- **例外**：只有**用路由器 DNS 的客户端**才拿到 fake-ip。客户端自己手工配了外部 DNS
+  （如 Mac Wi-Fi 手工设 223.5.5.5/114.114.114.114）时解析到真实 IP，
+  该机流量在 mihomo 里 `host` 为空 → 只命中 IP/GeoIP 类规则，域名规则对其失效。
+  这时「ip 不是 198.18.x」不是故障，是客户端配置问题
 - **异常处置**：注意重启后 15 秒内测会假失败（代理连接未预热），要复测
 
 ### 8. 规则库时效

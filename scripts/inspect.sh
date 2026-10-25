@@ -51,9 +51,17 @@ done
 
 echo
 echo "━━━ 8. 规则库时效 ━━━"
-latest=$(curl -fsSL --max-time 15 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null | grep -m1 '"tag_name"' | cut -d'"' -f4)
+# 取上游 latest：优先 releases 页 302 重定向（无 API 限流），回落 API
+latest=$(curl -fsSL --max-time 15 -o /dev/null -w '%{url_effective}' https://github.com/MetaCubeX/mihomo/releases/latest 2>/dev/null | sed -n 's#.*/tag/##p')
+[ -z "$latest" ] && latest=$(curl -fsSL --max-time 15 https://api.github.com/repos/MetaCubeX/mihomo/releases/latest 2>/dev/null | grep -m1 '"tag_name"' | cut -d'"' -f4)
 cur=$(cat "$(dirname "$HERE")/.mihomo-version" 2>/dev/null || echo "?")
-[ "$cur" = "$latest" ] && echo "  [OK] 内核 $cur = 上游最新" || echo "  [!!] 内核本地 $cur / 上游 ${latest}（可跑 update-kernel.sh）"
+if [ -z "$latest" ]; then
+  echo "  [??] 上游版本查询失败（GitHub 限流/不可达），本地 $cur"
+elif [ "$cur" = "$latest" ]; then
+  echo "  [OK] 内核 $cur = 上游最新"
+else
+  echo "  [!!] 内核本地 $cur / 上游 ${latest}（可跑 update-kernel.sh）"
+fi
 for f in Country.mmdb cn.mrs; do
   l=$(md5 -q "$(dirname "$HERE")/root/etc/miniclash/$f" 2>/dev/null)
   r=$(ssh "$ROUTER" "md5sum /etc/miniclash/$f 2>/dev/null | cut -d' ' -f1" 2>/dev/null)
