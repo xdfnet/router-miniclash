@@ -32,7 +32,9 @@ trap 'rm -rf "$TMP"' EXIT
 
 echo "==> 查询 mihomo 最新版本"
 # curl 先落盘再解析（避免管道 SIGPIPE 竞态导致偶发失败）
-curl -fsSL -o "$TMP/latest.json" https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+# --http1.1 + retry：走路由器透明代理时 HTTP/2 偶发 "Error in the HTTP2 framing layer"
+CURL_OPTS=(--http1.1 --retry 3 --retry-all-errors --retry-delay 2)
+curl -fsSL "${CURL_OPTS[@]}" -o "$TMP/latest.json" https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
     || { echo "错误: 无法获取 mihomo 最新版本" >&2; exit 1; }
 latest=$(python3 -c "import json;print(json.load(open('$TMP/latest.json'))['tag_name'])")
 cur=$(cat "$VER_FILE" 2>/dev/null || true)
@@ -43,7 +45,7 @@ if [ "$cur" = "$latest" ]; then
 else
     asset="mihomo-${PLATFORM}-${latest}.gz"
     echo "==> 下载内核 $asset"
-    curl -fsSL -o "$TMP/kernel.gz" \
+    curl -fsSL "${CURL_OPTS[@]}" -o "$TMP/kernel.gz" \
         "https://github.com/MetaCubeX/mihomo/releases/download/${latest}/${asset}"
     gzip -dc "$TMP/kernel.gz" > "$MIHOMO_BIN"
     chmod +x "$MIHOMO_BIN"
@@ -55,7 +57,7 @@ else
 fi
 
 echo "==> 下载最新 GeoIP 库 (country.mmdb)"
-curl -fsSL -o "$TMP/Country.mmdb" \
+curl -fsSL "${CURL_OPTS[@]}" -o "$TMP/Country.mmdb" \
     "https://github.com/MetaCubeX/meta-rules-dat/releases/latest/download/country.mmdb"
 # 损坏保护：GeoIP 库必须 > 1MB（与 ConfigManager 同规则）
 [ "$(wc -c < "$TMP/Country.mmdb")" -ge 1048576 ] || { echo "错误: 下载的 mmdb 异常 (<1MB)，已取消" >&2; exit 1; }
@@ -73,7 +75,7 @@ else
 fi
 
 echo "==> 下载最新 GeoSite 国内域名集 (cn.mrs，供 DNS 分流)"
-curl -fsSL -o "$TMP/cn.mrs" \
+curl -fsSL "${CURL_OPTS[@]}" -o "$TMP/cn.mrs" \
     "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs"
 # 损坏保护：zstd 压缩的 mrs 应 > 100KB
 [ "$(wc -c < "$TMP/cn.mrs")" -ge 102400 ] || { echo "错误: 下载的 cn.mrs 异常 (<100KB)，已取消" >&2; exit 1; }

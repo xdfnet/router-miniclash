@@ -26,7 +26,7 @@
 - **取数**：`uci get miniclash.core.node`；`/etc/miniclash/judge.log` 近 12 轮 + 全量裁决类型分布；
   `/tmp/miniclash_bandwidth.total`（探测累计流量）
 - **判据**：当前节点与最近裁决一致；judge **每 15 分钟一轮**无断档；
-  裁决以「保持」为主，少量「切换」属正常自愈；探测累计流量应稳定在 ~200MB/天量级
+  裁决以「保持」为主，少量「切换」属正常自愈；探测累计流量应稳定在 ~860MB/天量级
 - **异常处置**：频繁切换 = 两国**带宽**接近或节点劣化，看 judge.log 的带宽差值
   （判据是真实下载带宽，不是延迟——见 [跨国选优](country-selection.md)）；
   裁决断档 = judge cron 没跑，查 init.d 的 cron 注册；

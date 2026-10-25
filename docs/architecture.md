@@ -47,7 +47,7 @@ root/usr/bin/mihomo            内核二进制【不入库，update-kernel.sh �
                                来源 mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz
                                （两文件本地放此处，install.sh 缺失自动补齐；损坏自动重灌）
 root/usr/share/miniclash/judge.sh 跨国裁决（cron 每 15 分钟，带宽判据 + 双确认防抖）
-root/usr/share/miniclash/probe.sh 节点带宽实测底座（judge 调用；串行 256KB 下载）
+root/usr/share/miniclash/probe.sh 节点带宽实测底座（judge 调用；串行 1MB 下载）
 root/usr/share/miniclash/meter.sh 流量字节计量（cron 每分钟，采样连接 API 算字节增量）
 scripts/install.sh             root/ → 路由器 / 同步（不覆盖 UCI 配置）
 scripts/update-kernel.sh       下载/更新内核 + GeoIP 到 root/（--deploy 同步并重启）
@@ -150,7 +150,7 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 带宽由 `probe.sh` 实测：
 
 - **测速底座**：每个节点在 config.yaml 的 `listeners` 段有一个钉死到它的本地 HTTP 端口（`proxy: <节点名>`，只绑 127.0.0.1，端口 9100 起）。经该端口下载即走该节点 → 得到该节点的真实下载速度，且不干扰线上流量。端口↔节点映射直接读配置的 listeners 段——**配置是唯一事实来源**，不另建映射表。
-- 探测目标 GitHub raw 的 MAINTAINERS，取前 256KB（Range）。
+- 探测目标 GitHub raw 的 MAINTAINERS，取前 1MB（Range）。样本 256KB 会把握手当带宽、并让国家排序翻转（2026-10-25 实测）。
 - **必须串行测**：并发会互相抢带宽，排序完全失真（同一批节点并发测日本3 第一、串行测日本1 第一）。
 - 单次采样噪声可达 55%，历史保留最近 4 次，**节点分取中位数**。
 
@@ -159,7 +159,7 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 1. **紧急逃生（零流量、即时）**：读内核 url-test 的 alive 状态——内核自己每 60s 测一次，本地 API 读，不产生外网流量。当前国活节点 < 2 → 立刻切到活节点最多的国家，不等带宽测速。
 2. **择优**：国家分 = 该国节点分最高**前 2 个的平均**（活节点不足 2 个 = 不可用）；连续 2 次同一别国领先、**且**领先 25% 才 `PUT /proxies/自动优选 {"name":"X组"}`。双确认 + margin，杜绝打地鼠。
 
-**流量预算**：每轮只测 8 个节点（每国 4 个轮转窗口，2 轮覆盖全部 8 个）× 256KB ≈ 2MB/轮，15 分钟一轮 ≈ **196MB/天**（对比全量 16 节点 × 128KB × 5 分钟 ≈ 590MB/天）。累计消耗记在 `/tmp/miniclash_bandwidth.total`，巡检可见。
+**流量预算**：每轮只测 8 个节点（每国 4 个轮转窗口，2 轮覆盖全部 8 个）× 1MB ≈ 9MB/轮，15 分钟一轮 ≈ **~864MB/天**（占剩余配额约 0.6%/天）。累计消耗记在 `/tmp/miniclash_bandwidth.total`，巡检可见。
 
 **新增测速手段必须与内核 url-test 的 URL 解耦**（2026-10-15 教训）：内核按 URL 字符串索引节点延迟，judge 若与组内 url-test 同用 `github.com/generate_204`，并发测速会覆盖 url-test 的决策数据、把它带去次优节点——表现为组内每 5 分钟横跳一次次优节点。当前带宽测速走独立的 pinned listener，不碰内核的 URL 索引，天然解耦。
 
