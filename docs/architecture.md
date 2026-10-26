@@ -135,6 +135,10 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 - **proxy-server-nameserver**：节点域名用国内真实 DNS，防 fake-ip 化导致内核连节点死循环（**必须直连**，否则 DNS 经代理解析节点域名会死循环）。
 - **default-nameserver**：bootstrap（223.5.5.5 / 119.29.29.29），解析 DNS 服务器自身域名。
 - **联动**：dnsmasq 上游指向 7874，必须 `restart`（`reload` 不重读 `/tmp/dnsmasq.d/` 新文件）。
+- **loopback 例外（dnsmasq 层）**：微信桌面端用 `localhost.weixin.qq.com` 连**本机** 14013/14016/14019
+  服务，真实答案就是 `127.0.0.1`。fake-ip 化后流量被劫到路由器，路由器去连自己的 127.0.0.1 →
+  `connection refused`（2026-10-26 实测 440 次/天）。mihomo 的 DNS 不回传 loopback 地址，
+  所以这条例外写在 dnsmasq 的 drop-in 里：`host-record=localhost.weixin.qq.com,127.0.0.1`。
 - **权衡**：DNS 默认出口依赖代理链路（代理抖动时海外解析受影响）；国内域名仍走国内直连，不受影响。
 
 ## 自动选优（select 主组 + 国家 url-test + judge 裁决）

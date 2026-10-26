@@ -46,7 +46,9 @@
 ### 6. 告警归因
 - **取数**：`miniclash.log` 的 `level=warning` 按错误类型与 `match` 规则聚合
 - **判据**：能按已知模式归类即为正常——
-  - `connection refused` 127.0.0.1:13013 → 微信客户端本地代理端口，与路由器无关
+  - `connection refused` 127.0.0.1:14013/14016/14019（微信桌面端本地服务）
+    → **不是正常现象**：说明 fake-ip 又把 `localhost.weixin.qq.com` 劫走了，
+    查 dnsmasq drop-in 的 `host-record=localhost.weixin.qq.com,127.0.0.1` 是否还在
   - `context deadline exceeded` / `EOF` / `i/o timeout` → 机场入口间歇阻断，短时自愈
   - `dns resolve failed` → 确认目标域，多为子域本就不解析
   - `context canceled` → 上游主动取消

@@ -39,8 +39,10 @@ echo "━━━ 5. 流量走向 ━━━"
 
 echo
 echo "━━━ 6. 告警归因（近 3 天日志）━━━"
-ssh "$ROUTER" "grep 'level=warning' $LOG | sed 's/^time=[^ ]* level=warning msg=//' | sed 's/.*error: //' | sed 's/[0-9]\{2,\}/N/g' | cut -c1-46 | sort | uniq -c | sort -rn | head -6" 2>/dev/null | sed 's/^/  /'
-ssh "$ROUTER" "grep 'level=warning' $LOG | grep -oE 'match [A-Za-z]+/[a-zA-Z-]+' | sort | uniq -c | sort -rn | head -5" 2>/dev/null | sed 's/^/  规则命中: /'
+# 真的只取近 3 天：日志文件本身留存量很大，不按时间过滤会把几周前的旧账也算进来
+DATES="$(date +%F)|$(date -v-1d +%F)|$(date -v-2d +%F)"
+ssh "$ROUTER" "grep 'level=warning' $LOG | grep -E 'time=\"($DATES)T' | sed 's/^time=[^ ]* level=warning msg=//' | sed 's/.*error: //' | sed 's/[0-9]\{2,\}/N/g' | cut -c1-46 | sort | uniq -c | sort -rn | head -6" 2>/dev/null | sed 's/^/  /'
+ssh "$ROUTER" "grep 'level=warning' $LOG | grep -E 'time=\"($DATES)T' | grep -oE 'match [A-Za-z]+/[a-zA-Z-]+' | sort | uniq -c | sort -rn | head -5" 2>/dev/null | sed 's/^/  规则命中: /'
 
 echo
 echo "━━━ 7. 出网实测 ━━━"

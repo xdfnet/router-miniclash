@@ -242,7 +242,11 @@ dns_start() {
     # 必须用 restart：reload 不会让 dnsmasq 重读 /tmp/dnsmasq.d/ 的新文件，
     # 导致 DNS 走系统上游返回污染 IP（fake-ip 不生效）
     [ -d /tmp/dnsmasq.d ] || mkdir -p /tmp/dnsmasq.d
-    printf 'no-resolv\nserver=127.0.0.1#7874\n' > $DNSMASQ_CONF
+    # host-record：微信桌面端用 localhost.weixin.qq.com 连本机 14013/14016/14019 服务，
+    # 真实答案就是 127.0.0.1。走 fake-ip 会把流量劫到路由器，路由器连自己的 127.0.0.1
+    # → connection refused（2026-10-26 实测每天 440 次）。mihomo 的 DNS 不回传 loopback
+    # 地址，所以在 dnsmasq 这一层直接答 127.0.0.1。
+    printf 'no-resolv\nserver=127.0.0.1#7874\nhost-record=localhost.weixin.qq.com,127.0.0.1\n' > $DNSMASQ_CONF
     /etc/init.d/dnsmasq restart 2>/dev/null
 }
 
