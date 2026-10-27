@@ -11,7 +11,9 @@ KEEP='日本|新加坡'
 TMP=$(mktemp); trap 'rm -f "$TMP" "$TMP.d" "$TMP.f"' EXIT
 
 echo "==> 拉取订阅"
-curl -fsSL --max-time 30 -A 'clash-verge/v2.2.6' -o "$TMP" "$URL"
+# 失败常见两类：出口节点被机场源站封锁（已加 DIRECT 规则则不该再发生）／源站本身不可达
+curl -fsSL --max-time 30 -A 'clash-verge/v2.2.6' -o "$TMP" "$URL" \
+    || { echo "拉取订阅失败：检查订阅地址是否有效、机场源站是否可达（curl 报错见上）" >&2; exit 1; }
 # base64 包裹检测（BSD/GNU base64 兼容）
 if head -c 128 "$TMP" | grep -qE '^[A-Za-z0-9+/=]{40,}$'; then
     base64 -D -i "$TMP" -o "$TMP.d" 2>/dev/null || base64 -d "$TMP" > "$TMP.d"

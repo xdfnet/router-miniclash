@@ -113,6 +113,8 @@ start()
 
 **③ 海外服务例外注入**：在 `rules:` 最前插入「订阅 DIRECT 兜底、但本网络直连不通」的服务域名 → 自动优选：`push.apple.com`（Apple 推送，APNs 长连接），以及 `microsoft.com / microsoftonline.com / office.com / office365.com / live.com / officecdn`（Microsoft 账号 / OneDrive / Office）。原因是订阅把 `apple.com`、微软域名都兜成 DIRECT，而本网络直连 Apple / Microsoft 服务器 TCP 超时；走代理则 TLS 握手完整成功（实测验证）。
 
+**③' 机场订阅服务器强制直连**：`boost1.shop`（拉订阅/查流量的源站）注入 `DIRECT`。2026-10-27 实测：部分出口节点（当时日本组 8 个里有 4 个）到它的 64.186.234.5 被丢弃式封锁——代理请求 10s 无响应、无任何 mihomo 告警；8 个新加坡节点与直连都是 200（直连 0.8s）。节点会随机场调度变化，**拉订阅/查流量必须与出口节点解耦**，否则换到被封锁的节点就拉不到订阅（当天的症状：traffic.sh 与 update-subscribe.sh 静默超时）。
+
 **④ 缩进自适应**：注入行必须与订阅规则条目缩进**逐字节一致**。gen_config 用 awk 取 rules 首元素缩进，统一对齐组与规则注入；缩进不一致会让 YAML 解析吞掉 `rules[0]` 后续所有规则，表现为 "proxy [自动优选 - ...] not found"。
 
 **⑤ TLS 指纹**：gen_config 对 proxies 段**无 `client-fingerprint` 的 flow 节点**统一注入 `firefox`（跳过已有指纹节点）。mihomo 默认指纹的 ClientHello 超 MSS(1452)，路由器 GSO/TSO 合并大包被中间设备（光猫）丢前段 → SACK 只确认尾部 → 握手永不完整 → `i/o timeout`；firefox 指纹包小单段不分片。配合 start() 关 WAN GSO/TSO，解决隧道内大数据传输间歇失败（2026-09-01 BoostNet 恢复后拨号全灭根因）。

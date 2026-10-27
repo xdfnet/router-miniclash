@@ -76,6 +76,7 @@ config core 'core'
 | judge 报「无可用国家」，过几分钟自己恢复 | BoostNet 全部节点共用**单一入口 IP**（旧台湾 HiNet），会有 5~15 分钟短窗口的全端口 TCP 阻断并自愈。**窗口 <30 分钟不必操作，>30 分钟才判真封锁**。BusyBox `nc` 探 anytls 端口会被服务端立刻关闭（假阴性），真相源用 judge 探针 + `netstat -tnp \| grep mihomo` 看 ESTABLISHED + Mac 实测。**加国家组防不住入口级阻断**，加固方向是加入口 IP / 备机场 |
 | iPhone / Apple 推送不通 | 订阅 `apple.com,DIRECT` 兜成直连而本网络连不上 Apple → init.d 已自动注入 `push.apple.com → 自动优选`，重启生效 |
 | Microsoft 账号 / OneDrive 登录超时 | 订阅把微软域名兜成 DIRECT → init.d 已注入 → 自动优选，重启生效 |
+| 拉订阅 / `traffic.sh` 查流量超时 | 拉订阅走的是机场源站（boost1.shop）；部分出口节点到它被丢弃式封锁（2026-10-27 实测日本组 8 个里 4 个超时、8 个新加坡节点正常）。已给 `boost1.shop` 注入 `DIRECT` 走直连；若仍超时说明源站本身不可达，浏览器打开订阅链接验证 |
 | 主机场流量耗尽、需临时访问国外（单设备） | 用 fnos 东方互联 `192.168.100.6:10808`（SOCKS5/HTTP）；CLI 临时 `export https_proxy=http://192.168.100.6:10808` |
 
 ## 状态
