@@ -113,16 +113,12 @@ start()
 
 并把 rules 里所有 `,BoostNet` 引用改为 `,自动优选`。不用订阅自带「自动选择」组：它测 gstatic 会把日本判死，且含香港（Claude 不通）。
 
-**③ 人工域名干预（EXTRA 块）**：在 `rules:` 最前插入一批人工规则，分两类——
-「订阅 DIRECT 兜底、但本网络直连不通」的海外服务 → 自动优选（`apple.com` / `icloud.com` /
-`microsoft.com` / `microsoftonline.com` / `office.com` / `office365.com` / `live.com` / `officecdn`）；
-「国内可直连却被兜进代理」的 → DIRECT（`boost1.shop` / `dl.google.com` / `vsassets.io` /
-`prss.microsoft.com` / `delivery.mp.microsoft.com` / `hf-mirror.com` / `xiaohongshu` / `sun-clan.com`）。
+**③ 人工域名干预（EXTRA 块）**：在 `rules:` 最前插入一批人工规则，两类——
+「订阅 DIRECT 兜底、但本网络直连不通」的海外服务 → 自动优选（Apple / 微软系）；
+「国内可直连却被兜进代理」的 → DIRECT（机场订阅源站、Chrome 更新 CDN 等）。
 
-**每条规则为什么存在、实测多少，全部记在 [域名干预清单](domain-rules.md)**——改动前先读那份文档。
-两个典型例子：`boost1.shop`（拉订阅/查流量的源站，2026-10-27 实测部分出口节点到它被丢弃式封锁，10s 无响应）必须直连，
-否则换到被封锁的节点就拉不到订阅；`dl.google.com`（Chrome 更新包 266MB）解析到中国移动 CDN，
-2026-10-29 实测直连 13MB/s vs 走代理 0.1MB/s，差 100 倍，走代理必然超时。
+**规则本体、每条为什么存在、实测多少，全部在 [域名干预清单](domain-rules.md)**——那是唯一真源，
+改动前先读它，改完同一次提交里同步它。（本节不复制清单，避免两处漂移。）
 
 **④ 缩进自适应**：注入行必须与订阅规则条目缩进**逐字节一致**。gen_config 用 awk 取 rules 首元素缩进，统一对齐组与规则注入；缩进不一致会让 YAML 解析吞掉 `rules[0]` 后续所有规则，表现为 "proxy [自动优选 - ...] not found"。
 
@@ -145,6 +141,9 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 - **nameserver-policy（例外）**：国内域名（`rule-set:cn`，由 `cn.mrs` 提供）走国内 DoH（doh.pub/alidns）直连解析，保证国内站拿到本地 CDN；`+.lan`/`+.local` 内网域名走明文。
 - **proxy-server-nameserver**：节点域名用国内真实 DNS，防 fake-ip 化导致内核连节点死循环（**必须直连**，否则 DNS 经代理解析节点域名会死循环）。
 - **default-nameserver**：bootstrap（223.5.5.5 / 119.29.29.29），解析 DNS 服务器自身域名。
+- **direct-nameserver**：DIRECT 命中的域名用国内 DNS 解析（223.5.5.5 / 119.29.29.29）——
+  默认跟随 nameserver（国外 DoH 经节点）会把 `dl.google.com` 解析到 142.251.x 境外 IP，直连必然超时
+  （2026-10-29 实测）；国内 DNS 给的才是 120.253.x 国内 CDN 节点。
 - **联动**：dnsmasq 上游指向 7874，必须 `restart`（`reload` 不重读 `/tmp/dnsmasq.d/` 新文件）。
 - **loopback 例外（dnsmasq 层）**：微信桌面端用 `localhost.weixin.qq.com` 连**本机** 14013/14016/14019
   服务，真实答案就是 `127.0.0.1`。fake-ip 化后流量被劫到路由器，路由器去连自己的 127.0.0.1 →
@@ -155,54 +154,24 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 ## 自动选优（单池 select + judge 选节点 + guard 自愈）
 
 主组「自动优选」是 **select** 组，成员就是全部 16 个节点——**一个池子，谁好谁上**（2026-10-29 起）。
+内核不参与选择（原先的"国家 url-test 组"已删除）：它按延迟选，与带宽判据冲突。
 
 ```
-自动优选 (select)
+自动优选 (select)  ← 唯一的组
 ├── 日本1 … 日本8
 └── 新加坡1 … 新加坡8
 ```
 
-内核不参与选择（原先的"国家 url-test 组"已删除）：url-test 按延迟选节点，与本项目的带宽判据冲突，
-2026-10-29 实测它选中的恰是组内带宽最差的节点（新加坡1 到 dl.google.com 111KB/s，同批新加坡7 829KB/s）。
-机制细节与实测依据见 [单池择优](pool-selection.md)。
+谁在什么时候做什么：
 
-**judge 按真实下载带宽选具体节点**（`/usr/share/miniclash/judge.sh`，cron 每 15 分钟）。
+| 组件 | 频率 | 干什么 |
+|---|---|---|
+| `judge.sh` | cron 每 15 分钟 | 实测每个节点的**真实下载带宽**（probe.sh 经 config.yaml `listeners` 段的钉死端口串行下 1MB），按带宽排名选具体节点 `PUT` 进主组。常规门槛"连续 2 轮 + 领先 25%"；当前节点劣化到最优的 1/3 以下时单轮即切 |
+| `guard.sh` | watchdog 每 60 秒（judge 每轮开头也兜底一次） | 用 mihomo delay API 探活当前节点，不通就按 `/tmp/miniclash_rank` 从前往后找第一个活的切过去 |
+| `init.d` watchdog | 每 60 秒 | 调 guard.sh 自愈 + 把当前节点名落盘到 UCI `node` |
 
-起因（2026-10-24 实测）：mihomo 的 delay API 只测建连+首字节(TTFB)，同一节点同一 URL 1MB 与 8MB 耗时相同 → **测不出带宽**；而延迟与带宽并不同向——抗噪后实测日本组真实下载快 41%，延迟却略高于新加坡。按延迟选会稳定选到慢线路。
-
-带宽由 `probe.sh` 实测：
-
-- **测速底座**：每个节点在 config.yaml 的 `listeners` 段有一个钉死到它的本地 HTTP 端口（`proxy: <节点名>`，只绑 127.0.0.1，端口 9100 起）。经该端口下载即走该节点 → 得到该节点的真实下载速度，且不干扰线上流量。端口↔节点映射直接读配置的 listeners 段——**配置是唯一事实来源**，不另建映射表。
-- 探测目标 GitHub raw 的 MAINTAINERS，取前 1MB（Range）。样本 256KB 会把握手当带宽、并让排序翻转（2026-10-25 实测）。
-- **必须串行测**：并发会互相抢带宽，排序完全失真（同一批节点并发测日本3 第一、串行测日本1 第一）。
-- 单次采样噪声可达 55%，历史保留最近 4 次，**节点分取中位数**。
-
-择优规则：连续 2 次同一候选领先、**且**领先 25% 才 `PUT /proxies/自动优选 {"name":"<节点>"}`。双确认 + margin，杜绝打地鼠。
-
-**guard.sh 负责故障自愈**（`/usr/share/miniclash/guard.sh`，watchdog 每 60s 调一次）：用 mihomo 的 delay API
-探活当前节点（内核经该节点发一次真实请求），不通就按 judge 写的排名文件 `/tmp/miniclash_rank`
-从前往后找第一个活的 PUT 过去。实测：封掉当前节点的服务器端口后，2 秒内切走。
-探活 URL 与 probe 的测速 URL **刻意不同**（probe 打 1MB 正文，guard 打 generate_204）——probe 测带宽、
-guard 测活着，两者互不污染读数。
-
-> 没有 url-test 组之后，节点的 `alive` 字段不再由内核维护，**探活必须自己做**。
-
-**流量预算**：每轮测**全部 16 个节点** × 1MB ≈ 16MB/轮，15 分钟一轮 ≈ **~1.5GB/天**（占剩余配额约 1%）。
-比原来贵一倍（原来每轮只测 8 个、轮转覆盖），换来每个节点的读数都是新鲜的——选具体节点比选国家更依赖新鲜度。
-
-**防抖**（状态 `/tmp/miniclash_judge.state`）：当前节点实时从 select API 读；连续 2 次（30 分钟）同一候选领先、且当前节点慢 25%（当前节点无数据直接满足）才切换。
-
-**开机直选（BOOT 模式）**：select 启动默认固定选第一个成员，并非实时最优。init.d start() 末尾以 `BOOT=1` 前台跑一次 judge，测**全部**节点、绕过双确认直接 PUT 进最优节点（实测约 5 分钟，16 个节点串行测速）。
-
-**每轮落日志**：judge 每次运行（含未切换）都在独立的 judge.log 记一行
-`[judge] Top 新加坡5:314241B/s 新加坡3:205998B/s … | 当前 新加坡3:205998B/s | 保持 新加坡3`，
-巡检直接 tail 回溯；独立文件避免被量大的内核 warning 冲掉历史。两份日志超 512KB 都按行原地截断
-（judge.log 留 2500 行、miniclash.log 留 800 行），不切半行、inode 不变，防撑爆闪存且不影响 mihomo 持续写入。
-
-**为什么不用订阅自带「自动选择」组**：它测 gstatic（`http://www.gstatic.com/generate_204`），而本网络日本 gstatic 全不通（日本出口到 Google 静态 CDN 路由问题），会把日本判死；且组内含香港——香港 GitHub 快但 Claude/ChatGPT 不通。
-
-**为什么不用内核 url-test**：延迟排序在实测里分不出带宽（同一批节点延迟噪声 480~2770ms，带宽差 36 倍），
-且它选中的常是带宽最差的节点。见 [单池择优](pool-selection.md)。
+内核只负责按规则转发。**机制的判据、测速底座、防抖、流量预算与实测依据，全部见
+[单池择优](pool-selection.md)**——本节只留结构与调用链。
 
 ## watchdog（故障自愈 + 节点上报）
 

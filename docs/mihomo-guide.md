@@ -177,7 +177,7 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 | `nameserver-policy` | 指定域名走指定解析器（可用 geosite/rule-set），优先于 nameserver | `rule-set:cn` → 国内 DoH（doh.pub/alidns）直连；`+.lan`/`+.local` → 明文 |
 | `proxy-server-nameserver` | **仅解析节点域名**，防节点域名被 fake-ip 化导致连节点死循环 | `223.5.5.5`、`119.29.29.29`（**必须直连**） |
 | `fallback` | 后备解析服务器（旧防污染机制） | 未用（改用 nameserver + nameserver-policy 分流） |
-| `direct-nameserver` | DIRECT 出口域名专用解析 | 未用 |
+| `direct-nameserver` | DIRECT 出口域名专用解析 | `223.5.5.5`、`119.29.29.29`（**2026-10-29 加**）：默认跟随 nameserver（国外 DoH 经节点）会把 dl.google.com 解析到 142.251.x 境外 IP，直连必然超时；国内 DNS 给的才是 120.253.x 国内 CDN 节点 |
 | `fallback-filter` | 判定"污染"的规则，命中则用 fallback 结果 | 未设（已不依赖 fallback） |
 
 **MiniClash 国内外分流设计**：
@@ -185,6 +185,8 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 2. **nameserver 经代理用国外 DoH**：海外域名不掉国内 DNS、防污染
 3. **nameserver-policy 让国内域名（`rule-set:cn`）走国内 DoH 直连**：国内站拿到本地 CDN
 4. **proxy-server-nameserver 用明文 IP 兜底**：节点域名必须直连拿到真实 IP（否则经代理解析节点域名会死循环）
+5. **direct-nameserver 用国内 DNS**：DIRECT 命中的域名（国内 CDN）要拿国内落点，
+   否则会被国外 DoH 解析成境外 IP 直连超时（`dl.google.com` 即栽在这，2026-10-29）
 
 > `rule-set:cn` 的域名集来自 `cn.mrs`（`rule-providers` 以 `type: file / format: mrs` 加载，无需联网下载 geosite.dat）。
 
@@ -232,9 +234,9 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
 ### 5.3 MiniClash 的规则构成
 
 1. **订阅 rules 原样直通**（订阅自带 proxy-groups 在本地过滤时已删除，组由 gen_config 统一生成）
-2. **注入 EXTRA 规则**（在 `rules:` 最前，缩进取 rules 首元素对齐）：
-   - `DOMAIN-SUFFIX,apple.com/icloud.com/microsoft.com/…,自动优选`（订阅 DIRECT 兜底但本网直连不通的海外服务）
-   - `DOMAIN-KEYWORD,xiaohongshu,DIRECT`、`DOMAIN-SUFFIX,hf-mirror.com/sun-clan.com,DIRECT`、`DOMAIN-SUFFIX,boost1.shop,DIRECT`（机场自己的订阅服务器：部分出口节点到它被丢弃式封锁，走直连才拉得到）、`DOMAIN-SUFFIX,prss.microsoft.com/delivery.mp.microsoft.com,DIRECT`（国内可直连却会被兜进代理的；后两个须排在 `microsoft.com` 之前）
+2. **注入 EXTRA 规则**（在 `rules:` 最前，缩进取 rules 首元素对齐）：分"强制走代理"（订阅 DIRECT 兜底但本网直连不通的海外服务）
+   与"强制直连"（国内可直连却会被兜进代理的）两类——**规则本体与每条的原因、实测数据见
+   [域名干预清单](domain-rules.md)**，那里是唯一真源（更具体的域名须排在更宽的之前）
 3. **订阅默认组引用改指「自动优选」**（`BoostNet`/`🔰国外流量`/`⚓️其他流量` → 自动优选）
 
 **验证**：

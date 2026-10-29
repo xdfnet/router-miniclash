@@ -60,6 +60,7 @@
 | 位置 | 做什么 | 为什么 |
 |---|---|---|
 | `dns.direct-nameserver` | DIRECT 命中的域名用国内 DNS（223.5.5.5 / 119.29.29.29）解析 | 默认跟随 `nameserver`（国外 DoH 经节点），会把 `dl.google.com` 解析到 **142.251.x 境外 IP**，直连必然超时（2026-10-29 实测）。国内 DNS 给的是 120.253.x 国内 CDN 节点 |
+| `dns.direct-nameserver` | DIRECT 命中的域名用国内 DNS（223.5.5.5 / 119.29.29.29）解析 | 默认跟随 `nameserver`（国外 DoH 经节点），会把 `dl.google.com` 解析到 **142.251.x 境外 IP**，直连必然超时（2026-10-29 实测）。国内 DNS 给的是 120.253.x 国内 CDN 节点 |
 | `dns.nameserver-policy` 的 `rule-set:cn` | 国内域名用国内 DoH 直连解析 | 不给国内域名套国外 DoH |
 | `dns.fake-ip-filter` | `+.lan` / `+.local` / `+.myzxdy.top` 不 fake-ip | 内网域名给真 IP |
 | `dns.proxy-server-nameserver` | 节点服务器域名用真实 DNS | 避免 fake-ip 化导致内核解析节点时死循环 |
@@ -77,7 +78,7 @@
 
    ```sh
    # 路由器本机出站不被劫持，用真实 IP 直连才是有效判据
-   ip=$(nslookup "$d" 223.5.5.5 2>/dev/null | grep -oE "Address [0-9]+: [0-9.]+" | tail -1 | cut -d" " -f3)
+   ip=$(nslookup "$d" 223.5.5.5 2>/dev/null | grep -oE "Address [0-9]+: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" | tail -1 | cut -d" " -f3)
    curl -sk -o /dev/null -w "%{http_code} %{time_total}s\n" --max-time 8 --resolve "$d:443:$ip" "https://$d/"
    ```
 
@@ -98,34 +99,25 @@
 
 ---
 
-## 四、复核：已加的规则还该留着吗（2026-10-29 首轮）
+## 四、复核：已加的规则还该留着吗
 
-复核脚本：`./scripts/domain-review.sh`（巡检第 9 项自动跑）。
-两个必须记下来的判据坑：
+复核脚本：`./scripts/domain-review.sh`（巡检第 9 项自动跑）。判据与坑见
+[inspection.md 第 9b 项](inspection.md)。
 
-1. **必须用真实在用的主机名测，不能拿规则里的裸域名测**——`boost1.shop` 本体没有 A 记录
-   （真正在用的是 `sub.` / `vercdn.boost1.shop`），拿裸域名测会误报"直连不通"。
-   脚本从 meter 里按命中规则取流量最大的真实 host。
-2. **代理路径要用 global 模式实测**——DIRECT 规则的域名在规则生效时就是走直连的，
-   在 Mac 上 curl 到的还是直连路径，比出来的"代理更快"是假的。脚本临时把 mihomo 切 global
-   并把 GLOBAL 组指向当前节点，测完立刻切回 rule。
+**表是一张，不要每轮追加**——复核出新的 ⚠ 就更新对应行的"结论"列，
+新域名另起一行；只有结论变化时才改"首次复核"。
 
-首轮复核结果（15 条规则）：
+| 规则 | 首次复核 | 结论 |
+|---|---|---|
+| `boost1.shop`（DIRECT） | 直连正常 | 保持 |
+| `dl.google.com`（DIRECT） | 直连正常 | 保持（Chrome 更新 13MB/s） |
+| `prss.microsoft.com`（DIRECT） | 直连正常 | 保持（当前零收益也无害，挡整族 microsoft.com） |
+| `delivery.mp.microsoft.com`（DIRECT） | ⚠ 根路径直连 000 | **维持 DIRECT**：根路径 000 是 CDN 不给根路径；真实 Edge 包实测代理路径 404（根本下不到）、直连 1.37MB/s 正常 |
+| `apple.com`/`icloud.com`/`microsoft.com`/`microsoftonline.com`/`office.com`/`office365.com`/`live.com`/`officecdn`（PROXY） | ⚠ 部分报"直连快 1.6~1.7 倍" | **维持代理**：根路径（302/403/400）不是真实业务路径，1.6 倍又贴着门槛（实测噪声本身就能到 1.5~1.7 倍）；微软系直连不通是当初加规则的原因 |
+| `hf-mirror.com`/`xiaohongshu`/`sun-clan.com`（DIRECT） | 直连正常 | 保持 |
 
-| 规则 | 复核结论 |
-|---|---|
-| `delivery.mp.microsoft.com`（DIRECT） | ⚠ 报"直连不通" → **复核后维持原样**：根路径直连 000 属 CDN 不给根路径；用真实 Edge 包测，**代理路径 404（根本下不到）、直连 1.37MB/s 正常** → 必须保持 DIRECT |
-| `microsoftonline.com`（PROXY） | ⚠ 报"直连快 1.8 倍" → **维持代理**：根路径 302 看着快，但微软账号登录流程直连会超时（这正是当初加这条规则的原因），根路径测不出登录能否完成 |
-| `apple.com` / `icloud.com` / `microsoft.com` / `office.com` / `office365.com` / `live.com` / `officecdn`（PROXY） | 直连与代理差异不显著（0.1~0.4s 量级）→ 保持 |
-| `boost1.shop` / `dl.google.com` / `prss.microsoft.com` / `hf-mirror.com` / `xiaohongshu` / `sun-clan.com`（DIRECT） | 直连正常 → 保持 |
-| `icloud.com` / `office365.com` / `officecdn`（PROXY） | ⚠ 报"直连快 1.6~1.7 倍" → **未改**：根路径（302/403/400）不是真实业务路径，1.6 倍也贴着判定门槛；微软系直连不通是当初加规则的原因，必须用真实登录/下载流量才能判 |
-
-> 复核的 ⚠ 阈值是"快 1.6 倍"，而实测噪声本身就能到 1.5~1.7 倍（同一域名两轮采样就翻转）。
-> 所以 ⚠ 只用来**挑出要人工细看的那几条**，不作为直接改规则的依据——这正是铁律
-> 「没带来提速就是没收益」在撤销方向上的落法。
-
-> 结论：**复核出来的是"线索"，不是判决**——每条 ⚠ 都要用真实业务流量再验一次才能改规则。
-> 这是本文件第三节那条铁律（没带来提速就是没收益）在"撤销"方向上的应用。
+> ⚠ 只用来**挑出要人工细看的那几条**，不作为直接改规则的依据——
+> 这是铁律「没带来提速就是没收益」在撤销方向上的落法。
 
 ## 五、已否决的干预（别再加回去）
 

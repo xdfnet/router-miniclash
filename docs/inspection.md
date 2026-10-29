@@ -108,11 +108,8 @@
 
 ### 10. 分流正确性（人工判读）
 - **取数**：第 5 项的代理桶域名 → 在路由器上取真实 IP 并实测真实直连
-  ```sh
-  # 路由器本机出站不被劫持，用真实 IP 直连才是有效判据
-  ip=$(nslookup "$d" 223.5.5.5 2>/dev/null | grep -oE "Address [0-9]+: [0-9.]+" | tail -1 | cut -d" " -f3)
-  curl -sk -o /dev/null -w "%{http_code} %{time_total}s\n" --max-time 8 --resolve "$d:443:$ip" "https://$d/"
-  ```
+  （实测片段见 [domain-rules.md 第三节](domain-rules.md)，那里是唯一真源；
+  注意解析要只取 IPv4——`[0-9.]+` 会把 IPv6 截成 "2606" 这类碎片）
 - **判据**：
   - 真实 IP 属国内段且**直连明显快于代理** → 不该走代理，加 DIRECT 规则
   - 直连不通或更慢 → 保持代理
