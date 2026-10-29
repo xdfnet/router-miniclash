@@ -53,8 +53,15 @@ probe_proxy() {
     esac
 }
 
+# 解析落点（铁律 2）：国内 DNS 给的是什么 IP
+# 加 DIRECT 规则时 mihomo 用 dns.direct-nameserver（国内 DNS）解析——国内 DNS 给不出
+# 落点时，"直连"就是拿境外 IP 直连，绕地球，规则等于白加。
+resolve_cn_ip() {
+    ssh -n "$ROUTER" "nslookup \"$1\" 223.5.5.5 2>/dev/null | grep -oE 'Address [0-9]+: [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | tail -1 | cut -d' ' -f3" 2>/dev/null | tr -d '\r' | tail -1
+}
+
 echo "干预候选分析（兜底走代理的域名 → 直连/代理对照，2 轮）"
-printf "%-40s %-16s %-16s %s\n" "域名" "直连(状态/秒)" "代理(状态/秒)" "判定"
+printf "%-38s %-16s %-16s %-16s %s\n" "域名" "直连(状态/秒)" "代理(状态/秒)" "国内落点" "判定"
 
 for d in $CANDS; do
     case " $KNOWN_MUST " in
@@ -62,6 +69,7 @@ for d in $CANDS; do
     esac
     d1=$(probe_direct "$d"); p1=$(probe_proxy "$d")
     d2=$(probe_direct "$d"); p2=$(probe_proxy "$d")
+    cn_ip=$(resolve_cn_ip "$d")
 
     # 取"状态码一致"的那一轮为主；不一致就说明直连拿到的是不同的 CDN 落点，不可比
     c1=$(echo "$d1" | awk '{print $1}'); t1=$(echo "$d1" | awk '{print $2}')
@@ -76,6 +84,9 @@ for d in $CANDS; do
     pcode_ok=$pc; [ "$pc" = "000" ] && pcode_ok=$pc2
     if [ "$c1" = "NODNS" ] || [ "$c1" = "000" ] || [ "$c2" = "000" ] || [ "$c2" = "NODNS" ]; then
         verdict="必须代理（直连不通）"
+    elif [ -z "$cn_ip" ]; then
+        # 国内 DNS 给不出落点 → 加 DIRECT 后仍是拿境外 IP 直连（绕地球）
+        verdict="无国内落点（国内DNS无答案）→ 不建议加 DIRECT"
     elif [ "$c1" != "$c2" ]; then
         # 两轮直连状态码不同（如一轮 403 一轮 302）→ 落点不稳定，不可比
         verdict="状态码不一致，不可比（直连拿到的是另一处 CDN，人工看）"
@@ -91,10 +102,12 @@ for d in $CANDS; do
     else
         verdict="代理更快，保持现状"
     fi
-    printf "%-40s %-16s %-16s %s\n" "$d" "$d1/$d2" "$p1/$p2" "$verdict"
+    printf "%-38s %-16s %-16s %-16s %s\n" "$d" "$d1/$d2" "$p1/$p2" "${cn_ip:-无}" "$verdict"
 done
 
 echo
 echo "处置：只有判「候选」的域名才考虑加规则，且必须按 docs/domain-rules.md 第三节"
 echo "      用真实文件（不是根路径）复核吞吐，改完同一次提交里把结论写进 docs/domain-rules.md。"
 echo "      「没带来提速就是没收益」——加了没收益就回滚。"
+echo "两条铁律：① 干预单位=能独立取证的业务路径，不是域族（族内落点不同必须拆细）；"
+echo "         ② 加 DIRECT 必须同时确认解析落点（国内 DNS 给不出国内落点的，直连也是绕地球）。"
