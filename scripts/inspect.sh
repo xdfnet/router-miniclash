@@ -73,6 +73,12 @@ for f in Country.mmdb cn.mrs; do
 done
 
 echo
-echo "━━━ 9. 分流正确性：需人工判读 ━━━"
-echo "  见 docs/inspection.md 第 9 项：取第 5 项代理桶域名，"
+echo "━━━ 9. 干预候选（兜底代理域名 vs 直连对照）━━━"
+# 自动跑一遍候选分析：哪些"兜底走代理"的域名其实直连更快。
+# 耗时约 2~4 分钟（每域名直连+代理各 2 轮）。判据与处置见 docs/domain-rules.md 第三节。
+"$HERE/domain-candidates.sh" "${CANDIDATES:-5}" "${CANDIDATE_DAYS:-3}" 2>/dev/null | sed 's/^/  /'
+
+echo
+echo "━━━ 10. 分流正确性：需人工判读 ━━━"
+echo "  见 docs/inspection.md 第 10 项：取第 5 项代理桶域名，"
 echo "  在路由器上用真实 IP 实测直连，再与代理耗时对比。"
