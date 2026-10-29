@@ -1,9 +1,9 @@
 config core 'core'
 	# 总开关：1 启动，0 停止
 	option enabled '1'
-	# 主代理组名（select 主组，国家选择由 judge 裁决）
+	# 主代理组名（select 单池，成员=全部节点，judge 按带宽选具体节点）
 	option group '自动优选'
 	# 当前实际节点（watchdog 自动更新，仅供查看）
-	option node '新加坡1'
+	option node '新加坡3'
 	# 节点上报间隔（秒）
 	option check_interval '60'

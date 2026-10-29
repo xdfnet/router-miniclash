@@ -36,7 +36,7 @@ mihomo -t -d /etc/miniclash -f /etc/miniclash/config.yaml   # 改完配置必跑
 
 ## 架构（需跨文件理解的大图景）
 
-**双平面**：数据面（LAN TCP 被 iptables REDIRECT 到 7892、DNS 被 dnsmasq 指向 fake-ip 7874）运行期无脚本干预；控制面全部逻辑在 [root/etc/init.d/miniclash](root/etc/init.d/miniclash)（319 行，单文件）。
+**双平面**：数据面（LAN TCP 被 iptables REDIRECT 到 7892、DNS 被 dnsmasq 指向 fake-ip 7874）运行期无脚本干预；控制面全部逻辑在 [root/etc/init.d/miniclash](root/etc/init.d/miniclash)（359 行，单文件）。
 
 **配置生成 `gen_config()`**（init.d 内，核心中的核心）：
 - 端口/DNS/API 头部由脚本写死；上传的订阅 `subscribe.yaml` 从 `proxies:` 起 awk 直通内核，订阅自带的 port/dns/proxy-groups 段被丢弃或删除。

@@ -63,7 +63,7 @@ MiniClash 不翻译任何协议，直接用 mihomo 内核的能力。本文对�
 
 | 字段 | 官方语义 | MiniClash |
 |------|----------|-----------|
-| `profile.store-selected` | 持久化 API 对策略组的选择，重启沿用 | 未设（select 重启后默认选第一个国家组，judge 会重新裁决，行为一致） |
+| `profile.store-selected` | 持久化 API 对策略组的选择，重启沿用 | 未设（select 重启后默认选第一个节点，judge 的开机直选会改选最优节点，行为一致） |
 | `profile.store-fake-ip` | 持久化 fake-ip 映射表 | 未设（可选，加速重启后 DNS） |
 | `unified-delay` | 统一 RTT 计算，消除不同类型节点握手差异 | 未设（单协议 anytls，差异不大） |
 | `tcp-concurrent` | 用 DNS 解析出所有 IP 并发连接，取首个成功 | 未设（默认关，减少重复连接） |
@@ -103,26 +103,28 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 
 | 类型 | 官方语义 | MiniClash |
 |------|----------|-----------|
-| `select` | 手动选择，默认选第一个（或 `default-selected`） | ✅ 主组「自动优选」（judge 经 API 裁决国家） |
-| `url-test` | 定时测速，**自动选延迟最优** | ✅ 国家组「新加坡组」「日本组」 |
+| `select` | 手动选择，默认选第一个（或 `default-selected`） | ✅ 主组「自动优选」（judge 经 API 裁决具体节点） |
+| `url-test` | 定时测速，**自动选延迟最优** | ❌ **未用**（延迟与带宽并不同向，且实测它选中的常是带宽最差的节点，见 [单池择优](pool-selection.md)） |
 | `fallback` | 当前节点超时，**按顺序选第一个可用** | 未用 |
 | `load-balance` | 负载均衡：`round-robin` / `consistent-hashing` / `sticky-sessions` | 未用 |
 | `relay` | 链路代理（如 A→B→C 级联） | 未用 |
 
-> **select 与 url-test 的分工**：select 是"裁决层"——国家选择由 judge 双确认后经 API 指定，稳定优先；url-test 是"组内择优"——一直测速选延迟最低，性能优先。两层组合出"组内秒级自愈 + 国家 10 分钟防抖裁决"。
+> **为什么只有 select**：2026-10-29 起主组是**单池 select**（成员就是全部 16 个节点），
+> 选谁、切换、故障自愈全部自己管——judge 按真实下载带宽选具体节点，guard.sh 探活切换。
+> 详见 [单池择优](pool-selection.md)。
 
 ### 3.2 通用字段（健康检查核心）
 
 | 字段 | 官方语义 | MiniClash 值 |
 |------|----------|-------------|
-| `name` | 组名，特殊符号需引号 | `自动优选` / `新加坡组` / `日本组` |
-| `type` | 组类型 | `select` / `url-test` |
-| `proxies` | 引入出站代理或其他策略组 | select 引入国家组；国家组引入节点 |
+| `name` | 组名，特殊符号需引号 | `自动优选`（唯一的组） |
+| `type` | 组类型 | `select` |
+| `proxies` | 引入出站代理或其他策略组 | select 引入全部 16 个节点 |
 | `use` | 引入代理集合（proxy-providers） | 未用（节点走订阅 `proxies:`） |
-| `url` | 健康检查测试地址 | `https://github.com/generate_204` |
-| `interval` | 健康检查间隔，不为 0 启用定时测试（秒） | `60` |
+| `url` | 健康检查测试地址 | 未用（组内无健康检查；探活用 delay API，见 guard.sh） |
+| `interval` | 健康检查间隔，不为 0 启用定时测试（秒） | 未用 |
 | `lazy` | 默认 `true`：未被选中时不做测速 | 未设（全屋常流量，意义小） |
-| `tolerance` | url-test 切换容差（ms），新候选须领先此值才切 | `200` |
+| `tolerance` | url-test 切换容差（ms），新候选须领先此值才切 | 未用（不用 url-test） |
 | `expected-status` | 健康检查期望状态码，默认 `*`（任意都算通） | `200/204`（只认真实 204） |
 | `timeout` | 健康检查超时（ms） | 未设（默认 5000） |
 | `max-failed-times` | 最大失败次数，超过触发强制健康检查，默认 5 | 未设 |
@@ -132,21 +134,20 @@ curl -x http://127.0.0.1:7893 -s -o /dev/null -w '%{http_code}' https://github.c
 ### 3.3 MiniClash 的实际结构
 
 ```yaml
-# select 主组：成员为国家组，judge 经 API 裁决
-- { name: 自动优选, type: select, proxies: ['日本组','新加坡组'] }
-# 国家组：组内 url-test 择优（新加坡8节点、日本8节点，节点本地过滤后上传）
-- { name: 新加坡组, type: url-test, proxies: ['新加坡1',…,'新加坡8'],
-    url: 'https://github.com/generate_204', interval: 60, tolerance: 200, expected-status: 200/204 }
-- { name: 日本组, type: url-test, proxies: ['日本1',…,'日本8'],
-    url: 'https://github.com/generate_204', interval: 60, tolerance: 200, expected-status: 200/204 }
+# 唯一的组：单池 select，成员就是全部节点（节点在本地过滤后上传）
+- { name: 自动优选, type: select, proxies: ['日本1',…,'日本8','新加坡1',…,'新加坡8'] }
 ```
 
-行为：国家组内单节点劣化 **60s 内自动切**（tolerance 200ms 防组内噪声）；整国劣化由 judge 对 GitHub 主站 + githubassets 双地址（都活才）计时相加实测、**双确认 + 20% margin** 后切国家组（见 architecture.md「自动选优」）。2026-09-01 拨号事故见 [事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
+行为：judge 每 15 分钟按**真实下载带宽**选具体节点 PUT 进来（连续 2 轮 + 领先 25% 才切；
+当前节点劣化到最优的 1/3 以下时单轮即切）；guard.sh 每 60 秒探活当前节点，
+不通就切到排名里第一个活的（实测 2 秒）。见 [单池择优](pool-selection.md) 与
+[architecture.md](architecture.md)「自动选优」。2026-09-01 拨号事故见
+[事故报告](incident-2026-09-01-boostnet-dial-failure.md)。
 
 **验证**：
 ```sh
 curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" \
-  http://127.0.0.1:9090/proxies/自动优选   # now 是国家组名，再查 /proxies/新加坡组 看实际节点
+  http://127.0.0.1:9090/proxies/自动优选   # now 直接就是节点名
 ```
 
 ---
@@ -254,7 +255,7 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" http://127.0
 |------|------|------|-------------|
 | `/proxies` | GET | 全部代理/组，策略组含 `now`/`all`/`type`/`fixed`/`history` | watchdog 查 |
 | `/proxies/自动优选` | GET | 单组：`now` 当前选中、`type`、`all` 成员 | ✅ |
-| `/proxies/<name>` | PUT | 手动切换（主组传国家组名 `{"name":"新加坡组"}`） | judge 裁决 / 调试用 |
+| `/proxies/<name>` | PUT | 手动切换（主组传**节点名** `{"name":"新加坡7"}`） | judge 裁决 / 调试用 |
 | `/proxies/<name>` | DELETE | 清除 url-test/fallback 的 fixed 固定选择 | — |
 | `/proxies/<name>/delay` | GET | 单点测速：`?url=xxx&timeout=5000&expected=200/204` | 测节点 |
 | `/group/<name>/delay` | GET | 组内全部成员测速 | 调试 |
@@ -276,7 +277,7 @@ curl -s -H "Authorization: Bearer $(cat /etc/miniclash/api_secret)" http://127.0
 
 **watchdog 的用法**（每 `check_interval` 秒一次）：
 ```sh
-# 读主组当前国家；now 是国家组名，再展开一层取实际节点
+# 读主组当前节点；单池 select，now 直接就是节点名
 GET /proxies/自动优选   → now=新加坡组
 GET /proxies/新加坡组  → 组内实际选中
 ```
@@ -310,17 +311,22 @@ grep -A2 '日本1' /etc/miniclash/config.yaml | head -5   # 应含 client-finger
 
 ## 8. 健康检查与自动选优时间参数
 
-| 参数 | 官方语义 | MiniClash 值 | 为什么 |
-|------|----------|-------------|--------|
-| `url` | 健康检查测试地址 | `github.com/generate_204` | 与真实场景一致；不用订阅的 gstatic（判死日本） |
-| `interval` | 检查间隔（秒），url-test 适用 | `60` | 官方默认 300，机场劣化分钟级，60 已够积极 |
-| `tolerance` | url-test 切换容差（ms） | `200` | 同国节点延迟接近（真值差 34ms）且单次采样噪声大（跨度 546ms），200 是「识别真劣化」与「不被噪声带偏」之间的有效门槛（2026-10-24 实测） |
-| `expected-status` | 期望响应码，默认 `*` 任意都算通 | `200/204` | 只认真实 204，防劫持假 200 误判健康 |
-| `timeout` | 检查超时（ms），默认 5000 | 未设 | 默认够用 |
-| `max-failed-times` | 超过则强制健康检查，默认 5 | 未设 | 默认即可 |
-| `lazy` | 未选中不测速，默认 true | 未设 | 全屋常流量，省不了多少 |
+**内核的 url-test 健康检查已不用**（2026-10-29 起：它按延迟选，与带宽判据冲突），
+下表的参数仅作背景参考——实际生效的是 judge（带宽判据，15 分钟一轮）与 guard.sh（探活，60 秒一轮）。
 
-**关键行为**：url-test 当前节点超时即**立即触发测速切换**（不等整个 interval），tolerance 决定"领先多少才切"。**切换会断连**（在途连接重建），所以组内 200ms 门槛、国家由 judge 双确认 + 20% margin 裁决，是"慢半拍但稳"的定调设计。
+| 参数 | 官方语义 | 曾经的用法 | 现在 |
+|------|----------|-----------|------|
+| `url` | 健康检查测试地址 | `github.com/generate_204` | 组内不用；guard.sh 探活用 delay API 打 generate_204 |
+| `interval` | 检查间隔（秒），url-test 适用 | `60` | 组内不用 |
+| `tolerance` | url-test 切换容差（ms） | `200` | 组内不用 |
+| `expected-status` | 期望响应码，默认 `*` 任意都算通 | `200/204`（只认真实 204，防劫持假 200） | 组内不用；judge 的防抖是"连续 2 轮 + 领先 25%" |
+| `timeout` | 检查超时（ms），默认 5000 | 未设 | guard.sh 探活用 `timeout=5000` |
+| `max-failed-times` | 超过则强制健康检查，默认 5 | 未设 | 未用 |
+| `lazy` | 未选中不测速，默认 true | 未设 | 未用 |
+
+**关键行为**：切换节点会断连（在途连接重建、浏览器重连、缓存重建），
+所以 judge 用双确认 + 25% margin 换稳定；只有"当前节点劣化到最优的 1/3 以下"才单轮即切。
+内核 url-test 的"超时立即切"那种秒级自愈，现在由 guard.sh 每 60 秒探活替代（实测 2 秒切走）。
 
 ---
 
@@ -374,10 +380,10 @@ cat /etc/miniclash/config.yaml                       # 看注入的组/规则/�
 # API（需要 secret）
 S="Authorization: Bearer $(cat /etc/miniclash/api_secret)"
 
-# 自动优选当前国家
+# 自动优选当前节点（单池 select，now 直接就是节点名）
 curl -s -H "$S" http://127.0.0.1:9090/proxies/自动优选 | grep -oE '"(now|type)":"[^"]*"'
-# 国家组实际选中（再展开一层）
-curl -s -H "$S" http://127.0.0.1:9090/proxies/新加坡组 | grep -oE '"now":"[^"]*"'
+# 当前带宽排名（judge 写，guard 按序找备选）
+head -5 /tmp/miniclash_rank
 
 # 单点测速（expected 只认真实 204）
 curl -s -H "$S" 'http://127.0.0.1:9090/proxies/日本1/delay?url=https://github.com/generate_204&timeout=5000&expected=200/204'
