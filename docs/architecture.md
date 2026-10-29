@@ -116,8 +116,8 @@ start()
 **③ 人工域名干预（EXTRA 块）**：在 `rules:` 最前插入一批人工规则，分两类——
 「订阅 DIRECT 兜底、但本网络直连不通」的海外服务 → 自动优选（`apple.com` / `icloud.com` /
 `microsoft.com` / `microsoftonline.com` / `office.com` / `office365.com` / `live.com` / `officecdn`）；
-「国内可直连却被兜进代理」的 → DIRECT（`boost1.shop` / `dl.google.com` / `prss.microsoft.com` /
-`delivery.mp.microsoft.com` / `hf-mirror.com` / `xiaohongshu` / `sun-clan.com`）。
+「国内可直连却被兜进代理」的 → DIRECT（`boost1.shop` / `dl.google.com` / `vsassets.io` /
+`prss.microsoft.com` / `delivery.mp.microsoft.com` / `hf-mirror.com` / `xiaohongshu` / `sun-clan.com`）。
 
 **每条规则为什么存在、实测多少，全部记在 [域名干预清单](domain-rules.md)**——改动前先读那份文档。
 两个典型例子：`boost1.shop`（拉订阅/查流量的源站，2026-10-27 实测部分出口节点到它被丢弃式封锁，10s 无响应）必须直连，

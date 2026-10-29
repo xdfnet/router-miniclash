@@ -41,7 +41,7 @@ mihomo -t -d /etc/miniclash -f /etc/miniclash/config.yaml   # 改完配置必跑
 **配置生成 `gen_config()`**（init.d 内，核心中的核心）：
 - 端口/DNS/API 头部由脚本写死；上传的订阅 `subscribe.yaml` 从 `proxies:` 起 awk 直通内核，订阅自带的 port/dns/proxy-groups 段被丢弃或删除。
 - 把订阅的全部节点直接挂进 select 主组「自动优选」（**单池，没有国家 url-test 组**）；rules 里 `,BoostNet`/`,🔰国外流量`/`,⚓️其他流量` 引用统一改写为 `,自动优选`。
-- 在 rules 顶部注入例外（Apple/微软走代理、hf-mirror/小红书/sun-clan/boost1.shop/dl.google.com 强制直连）；**每条规则的原因与实测数据记在 [docs/domain-rules.md](docs/domain-rules.md)**，改规则先读它。对无指纹的 flow 节点注入 `client-fingerprint: firefox`。
+- 在 rules 顶部注入例外（Apple/微软走代理、hf-mirror/小红书/sun-clan/boost1.shop/dl.google.com/vsassets.io 强制直连）；**每条规则的原因与实测数据记在 [docs/domain-rules.md](docs/domain-rules.md)**，改规则先读它。对无指纹的 flow 节点注入 `client-fingerprint: firefox`。
 
 **单池择优（2026-10-29 起，取代原来的"组内核 url-test + 跨国 judge"两层）**：
 1. 择优：[judge.sh](root/usr/share/miniclash/judge.sh)（cron 每 15 分钟）以**真实下载带宽**为判据——[probe.sh](root/usr/share/miniclash/probe.sh) 经 config.yaml 的 `listeners` 段（每个节点一个钉死的本地端口）**串行**实测 1MB 下载速度，节点分取最近 4 次中位数；连续 2 次同一候选领先 25% 才经 API（9090，secret 在 `/etc/miniclash/api_secret`）PUT 切换。当前节点带宽掉到最优的 1/3 以下时**单轮即切**（快速通道，慢节点不等 30 分钟）。

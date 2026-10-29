@@ -73,10 +73,15 @@ for f in Country.mmdb cn.mrs; do
 done
 
 echo
-echo "━━━ 9. 干预候选（兜底代理域名 vs 直连对照）━━━"
-# 自动跑一遍候选分析：哪些"兜底走代理"的域名其实直连更快。
+echo "━━━ 9. 干预审查（新增候选 + 复核已有）━━━"
+# 9a 新增候选：哪些"兜底走代理"的域名其实直连更快。
 # 耗时约 2~4 分钟（每域名直连+代理各 2 轮）。判据与处置见 docs/domain-rules.md 第三节。
 "$HERE/domain-candidates.sh" "${CANDIDATES:-5}" "${CANDIDATE_DAYS:-3}" 2>/dev/null | sed 's/^/  /'
+echo
+# 9b 复核已有规则：已加的规则还有没有存在价值（失效了 / 没收益了 → 该撤）。
+# 耗时约 3~6 分钟（每条规则直连+代理各 2 轮，代理路径用 global 模式实测）。
+echo "  ── 复核已生效的干预 ──"
+"$HERE/domain-review.sh" "${CANDIDATE_DAYS:-3}" 2>/dev/null | sed 's/^/  /'
 
 echo
 echo "━━━ 10. 分流正确性：需人工判读 ━━━"

@@ -43,6 +43,7 @@ config core 'core'
 | 查套餐流量 | `./scripts/traffic.sh`（剩余 / 重置 / 到期） |
 | 流量走向审计 | `./scripts/traffic-audit.sh [天数]`（代理/直连构成、兜底代理核查） |
 | 干预候选分析 | `./scripts/domain-candidates.sh [候选数] [天数]`（兜底代理域名逐个对比直连/代理，判据见 [docs/domain-rules.md](docs/domain-rules.md)） |
+| 干预复核 | `./scripts/domain-review.sh [天数]`（已加的规则还有没有存在价值：失效了/没收益了就该撤） |
 | 巡检（一键取数） | `./scripts/inspect.sh`（10 项巡检取数，判据与汇报格式见 [docs/inspection.md](docs/inspection.md)） |
 | 看裁决历史 | `ssh luyou "tail /etc/miniclash/judge.log"`（每 15 分钟一行） |
 | 内核 / GeoIP 更新 | `./scripts/update-kernel.sh [--deploy]` |

@@ -20,7 +20,8 @@
 |---|---|---|
 | `boost1.shop` | 机场自己的订阅服务器。部分出口节点到它被**丢弃式封锁**（连上不回数据），换到被封锁的节点就拉不到订阅、查不了流量 | 2026-10-27：日本1/3/4/8 走代理 10s 无响应；8 个新加坡节点与直连都 200；直连 0.8s |
 | `dl.google.com` | Chrome 全平台更新包 266MB。该域名解析到**中国移动 CDN**（120.253.x），国内直连极快；走代理是绕地球 | 2026-10-29：路由器直连 4.6MB/s vs 走代理 0.1MB/s（差 30 倍），走代理必超时 |
-| `prss.microsoft.com` | VSCode 等下载 CDN，国内可直连 | 必须排在 `microsoft.com` 之前（后者走代理） |
+| `vsassets.io` | VS Code 扩展资产 CDN，Akamai 国内节点（23.49.x / 23.200.x） | 2026-10-29：根路径直连 0.26s vs 代理 0.30~1.5s；同族 `marketplace.visualstudio.com` 真实 .vsix 包直连 575KB/s vs 代理 52KB/s（11 倍） |
+| `prss.microsoft.com` | VSCode 等下载 CDN，国内可直连 | 必须排在 `microsoft.com` 之前（后者走代理）。注意实测直连 438KB/s vs 代理 441KB/s——**这条目前零收益也无害**（瓶颈在 CDN 本身不在路由），留着是挡整族 microsoft.com 走代理 |
 | `delivery.mp.microsoft.com` | Edge 下载 CDN，国内联通节点 | 直连 0.18s vs 代理 0.40s |
 | `hf-mirror.com` | HuggingFace 镜像站，解析到东京 SAKURA，国内可直连 | — |
 | `xiaohongshu.com`（关键字 `xiaohongshu`） | 小红书，国内服务 | 注意：桌面端会连自己的本地服务 `localhost.redpass.xiaohongshu.com:10001-10011`，命中 DIRECT 后连 127.0.0.1 被拒 → 日志里每天上千条 `connection refused`，**是噪音不是故障** |
@@ -78,11 +79,41 @@
 
 ---
 
-## 四、已否决的干预（别再加回去）
+## 四、复核：已加的规则还该留着吗（2026-10-29 首轮）
+
+复核脚本：`./scripts/domain-review.sh`（巡检第 9 项自动跑）。
+两个必须记下来的判据坑：
+
+1. **必须用真实在用的主机名测，不能拿规则里的裸域名测**——`boost1.shop` 本体没有 A 记录
+   （真正在用的是 `sub.` / `vercdn.boost1.shop`），拿裸域名测会误报"直连不通"。
+   脚本从 meter 里按命中规则取流量最大的真实 host。
+2. **代理路径要用 global 模式实测**——DIRECT 规则的域名在规则生效时就是走直连的，
+   在 Mac 上 curl 到的还是直连路径，比出来的"代理更快"是假的。脚本临时把 mihomo 切 global
+   并把 GLOBAL 组指向当前节点，测完立刻切回 rule。
+
+首轮复核结果（15 条规则）：
+
+| 规则 | 复核结论 |
+|---|---|
+| `delivery.mp.microsoft.com`（DIRECT） | ⚠ 报"直连不通" → **复核后维持原样**：根路径直连 000 属 CDN 不给根路径；用真实 Edge 包测，**代理路径 404（根本下不到）、直连 1.37MB/s 正常** → 必须保持 DIRECT |
+| `microsoftonline.com`（PROXY） | ⚠ 报"直连快 1.8 倍" → **维持代理**：根路径 302 看着快，但微软账号登录流程直连会超时（这正是当初加这条规则的原因），根路径测不出登录能否完成 |
+| `apple.com` / `icloud.com` / `microsoft.com` / `office.com` / `office365.com` / `live.com` / `officecdn`（PROXY） | 直连与代理差异不显著（0.1~0.4s 量级）→ 保持 |
+| `boost1.shop` / `dl.google.com` / `prss.microsoft.com` / `hf-mirror.com` / `xiaohongshu` / `sun-clan.com`（DIRECT） | 直连正常 → 保持 |
+
+> 结论：**复核出来的是"线索"，不是判决**——每条 ⚠ 都要用真实业务流量再验一次才能改规则。
+> 这是本文件第三节那条铁律（没带来提速就是没收益）在"撤销"方向上的应用。
+
+## 五、已否决的干预（别再加回去）
 
 - **`gdtimg.com` DIRECT**：加了仍 2.5s，腾讯广告走的是境外 CDN 节点，规则无效，已回滚。
 - **`dl.google.com` 走代理**：能通但 100KB/s，266MB 要 40 分钟，Updater 必然超时——已改 DIRECT。
 - **Apple/微软系改回 DIRECT**：本网络直连超时，改了等于断登录。
+- **`vsassets.io` DIRECT**（2026-10-29 当天加了又撤）：**同一天测两轮，结论完全相反**——
+  第一轮"直连快 11 倍"（marketplace.visualstudio.com 的 .vsix 直连 575KB/s vs 代理 52KB/s），
+  几小时后用 vsassets.io 自己的真实 .vsix 包复测：**直连 26KB/s vs 代理 3.18MB/s，代理快 120 倍**。
+  原因是 Akamai 的国内边缘节点分配极不稳定（先后落到 23.49.x / 23.200.x / 23.209.73.52，
+  快的慢的差 100 倍）。**教训：CDN 类域名的"直连更快"必须用真实文件测、且隔一段时间复测，
+  否则加进去的是一条随机生效的规则。**
 
 ### 2026-10-29 兜底代理域名实测（7 天数据，共 ~1.7GB 走代理）
 
@@ -97,12 +128,16 @@
 | `claude.ai` | 54 MB | — | 通 | **必须代理** |
 | `cdn.nuphy.io` | 33 MB | 163.181.77.216（阿里云 CDN）1.50s | 1.69s | 边际收益（省 0.2s），未加 |
 | `szxiaozi.com` | 17 MB | 119.28.67.219（腾讯云）连接被重置 | 通 | 直连不通，保持代理 |
-| `swiftlang.gallerycdn.vsassets.io` | 12 MB | 23.49.104.53（Akamai）0.29s | 0.88s | 边际收益（省 0.6s/请求），未加 |
+| `swiftlang.gallerycdn.vsassets.io` | 12 MB | 23.49.104.53（Akamai）0.26~0.29s | 0.30~1.5s | **已加 `vsassets.io` DIRECT**（2026-10-29；同族 .vsix 真实包直连快 11 倍） |
 | `imagine-public.x.ai` | 4 MB | 157.240.8.50 超时 | 0.75s | **必须代理** |
 
-结论：这一批**没有"必须干预"的域名**。两个直连不劣的（nuphy / swiftlang）收益都在百毫秒级、周流量
-十几到几十 MB，按"没带来提速就是没收益"的判据**不写规则**。真正值得干预的例子是 `dl.google.com`
-（100 倍差距）。
+结论：这批里真正值得干预的只有 `dl.google.com`（100 倍差距，已加），
+`vsassets.io` 次之（同族真实包 11 倍，已加）；
+`cdn.nuphy.io` 与 `res.public.onecdn.static.microsoft` 收益都在百毫秒级、周流量几十 MB，
+按"没带来提速就是没收益"的判据**不写规则**。
+
+> 这些结论不是一次性的：`scripts/domain-candidates.sh`（巡检第 9 项）每次巡检都会重跑，
+> 新域名会自己冒出来。本节记录的是已处理过的，脚本会跳过已判定"必须代理"的那些。
 
 > 另测：`prss.microsoft.com`（已注入 DIRECT）实测直连 438KB/s vs 代理 441KB/s——
 > 瓶颈在 CDN 本身而非路由，**这条规则目前零收益也无害**。留着不删（它挡的是"整族 microsoft.com
