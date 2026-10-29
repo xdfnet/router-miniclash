@@ -45,12 +45,14 @@
 | `hf-mirror.com` | HuggingFace 镜像站，解析到东京 SAKURA，国内可直连 | — |
 | `xiaohongshu.com`（关键字 `xiaohongshu`） | 小红书，国内服务 | 注意：桌面端会连自己的本地服务 `localhost.redpass.xiaohongshu.com:10001-10011`，命中 DIRECT 后连 127.0.0.1 被拒 → 日志里每天上千条 `connection refused`，**是噪音不是故障** |
 | `sun-clan.com` | 国内服务 | — |
+| `ls.apple.com` | **地图瓦片与地理配置**（`gspe*-cn-ssl.ls.apple.com`）。Apple 在国内有 CDN 落点（阿里/移动 CDN），但被下面的 `apple.com` 兜底规则一起塞进代理节点 → macOS 地图与「查找」里的地图绕地球取瓦片 | 2026-10-29：Mac 侧实测 `gspe19-cn` 代理 2.5~3.4s → 直连 **0.12s**；`gspe19-2-cn` 代理 1.8~6.1s → 直连 **0.07s**；`gspe35-ssl` → 0.07s。改后 mihomo 连接表确认命中 `DIRECT` |
+| `apple-mapkit.com` | MapKit CDN（`cdn.apple-mapkit.com`），同上 | 2026-10-29：代理 0.43~0.85s → 直连 **0.08s** |
 
 ### 强制走代理（订阅把国内可直连的兜成 DIRECT，但实际直连不通）
 
 | 域名 | 原因 |
 |---|---|
-| `apple.com` / `icloud.com` | 订阅默认把 Apple 系兜成 DIRECT，但本网络直连 Apple 超时（Apple 在国内无 CDN 落点） |
+| `apple.com` / `icloud.com` | 订阅默认把 Apple 系兜成 DIRECT，但本网络直连 Apple 超时（Apple 在国内无 CDN 落点）。**例外**：地图基础设施（`ls.apple.com` / `apple-mapkit.com`）走 DIRECT，见上表 |
 | `microsoft.com` / `microsoftonline.com` / `office.com` / `office365.com` / `live.com` / `officecdn`（关键字） | 微软账号、OneDrive、Office 登录与更新直连不通 |
 
 ---
@@ -59,8 +61,7 @@
 
 | 位置 | 做什么 | 为什么 |
 |---|---|---|
-| `dns.direct-nameserver` | DIRECT 命中的域名用国内 DNS（223.5.5.5 / 119.29.29.29）解析 | 默认跟随 `nameserver`（国外 DoH 经节点），会把 `dl.google.com` 解析到 **142.251.x 境外 IP**，直连必然超时（2026-10-29 实测）。国内 DNS 给的是 120.253.x 国内 CDN 节点 |
-| `dns.direct-nameserver` | DIRECT 命中的域名用国内 DNS（223.5.5.5 / 119.29.29.29）解析 | 默认跟随 `nameserver`（国外 DoH 经节点），会把 `dl.google.com` 解析到 **142.251.x 境外 IP**，直连必然超时（2026-10-29 实测）。国内 DNS 给的是 120.253.x 国内 CDN 节点 |
+| `dns.direct-nameserver` | DIRECT 命中的域名用国内 DNS（223.5.5.5 / 119.29.29.29）解析 | 默认跟随 `nameserver`（国外 DoH 经节点），会把 `dl.google.com` 解析到 **142.251.x 境外 IP**，直连必然超时（2026-10-29 实测）。国内 DNS 给的是 120.253.x 国内 CDN 节点。同样保证 `ls.apple.com` 落到 Apple 的国内 CDN（阿里/移动）而非境外边缘 |
 | `dns.nameserver-policy` 的 `rule-set:cn` | 国内域名用国内 DoH 直连解析 | 不给国内域名套国外 DoH |
 | `dns.fake-ip-filter` | `+.lan` / `+.local` / `+.myzxdy.top` 不 fake-ip | 内网域名给真 IP |
 | `dns.proxy-server-nameserver` | 节点服务器域名用真实 DNS | 避免 fake-ip 化导致内核解析节点时死循环 |
@@ -115,6 +116,7 @@
 | `delivery.mp.microsoft.com`（DIRECT） | ⚠ 根路径直连 000 | **维持 DIRECT**：根路径 000 是 CDN 不给根路径；真实 Edge 包实测代理路径 404（根本下不到）、直连 1.37MB/s 正常 |
 | `apple.com`/`icloud.com`/`microsoft.com`/`microsoftonline.com`/`office.com`/`office365.com`/`live.com`/`officecdn`（PROXY） | ⚠ 部分报"直连快 1.6~1.7 倍" | **维持代理**：根路径（302/403/400）不是真实业务路径，1.6 倍又贴着门槛（实测噪声本身就能到 1.5~1.7 倍）；微软系直连不通是当初加规则的原因 |
 | `hf-mirror.com`/`xiaohongshu`/`sun-clan.com`（DIRECT） | 直连正常 | 保持 |
+| `ls.apple.com`/`apple-mapkit.com`（DIRECT） | 直连正常（2026-10-29 改后实测 0.07~0.12s） | 保持（地图瓦片不再绕地球） |
 
 > ⚠ 只用来**挑出要人工细看的那几条**，不作为直接改规则的依据——
 > 这是铁律「没带来提速就是没收益」在撤销方向上的落法。

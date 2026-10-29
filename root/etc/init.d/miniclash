@@ -108,7 +108,8 @@ gen_config() {
         echo "    format: mrs"
         echo "    path: ./cn.mrs"
         # 订阅从 proxies: 起直通；在 rules 最前注入"订阅 DIRECT 兜底、但本网络直连不通"的海外服务走代理：
-        #   Apple 全家（apple.com/icloud.com 被订阅兜 DIRECT、本网络直连 Apple 超时）、
+        #   Apple 全家（apple.com/icloud.com 被订阅兜 DIRECT、本网络直连 Apple 超时）——
+        #     例外见下方 ls.apple.com / apple-mapkit.com（地图瓦片有国内 CDN，走代理绕地球）,
         #   微软全家（Microsoft 账号/OneDrive/Office 登录与更新）
         # 反向：国内可直连却被 GEOIP 或上面的注入兜进代理的，强制 DIRECT：
         #   hf-mirror.com（东京 SAKURA）、xiaohongshu.com（小红书）、sun-clan.com、
@@ -119,9 +120,17 @@ gen_config() {
         #     拉订阅/查流量必须走直连，否则换到被封锁的节点就拉不到订阅）
         #   dl.google.com（Chrome 全平台更新包 266MB。解析到中国移动 CDN（120.253.253.225），
         #     2026-10-29 实测路由器直连 4.6MB/s vs 走代理 0.1MB/s——差 30 倍，走代理必然超时）
+        #   ls.apple.com / apple-mapkit.com（地图瓦片与 MapKit CDN。Apple 在国内有 CDN 落点
+        #     （gspe*-cn-ssl.ls.apple.com 落阿里/移动 CDN），但被下面的 apple.com 兜底规则
+        #     一起塞进代理节点 → macOS 地图与「查找」里的地图绕地球取瓦片。
+        #     2026-10-29 实测：gspe19-cn 代理 2.5~3.4s vs 直连 0.16s；gspe19-2-cn 代理 1.8~2.4s
+        #     vs 直连 0.06s；cdn.apple-mapkit.com 代理 0.43~0.85s vs 直连 0.13s。
+        #     必须排在 apple.com 之前；只放行地图基础设施，Apple 账号/推送/商店仍走代理）
         # 注意：注入缩进必须与订阅规则条目一致（awk 动态对齐：旧订阅 4 空格、新订阅 2 空格；缩进不匹配会破坏 YAML）
         if [ -n "$group" ]; then
-            EXTRA="    - DOMAIN-SUFFIX,boost1.shop,DIRECT
+            EXTRA="    - DOMAIN-SUFFIX,ls.apple.com,DIRECT
+    - DOMAIN-SUFFIX,apple-mapkit.com,DIRECT
+    - DOMAIN-SUFFIX,boost1.shop,DIRECT
     - DOMAIN-SUFFIX,dl.google.com,DIRECT
     - DOMAIN-SUFFIX,prss.microsoft.com,DIRECT
     - DOMAIN-SUFFIX,delivery.mp.microsoft.com,DIRECT
