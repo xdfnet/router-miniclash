@@ -24,13 +24,15 @@
 
 ### 3. 选优健康
 - **取数**：`uci get miniclash.core.node`；`/etc/miniclash/judge.log` 近 12 轮 + 全量裁决类型分布；
+  `/etc/miniclash/guard.log`（故障自愈记录）；`/tmp/miniclash_rank`（当前带宽排名）；
   `/tmp/miniclash_bandwidth.total`（探测累计流量）
 - **判据**：当前节点与最近裁决一致；judge **每 15 分钟一轮**无断档；
-  裁决以「保持」为主，少量「切换」属正常自愈；探测累计流量应稳定在 ~860MB/天量级
-- **异常处置**：频繁切换 = 两国**带宽**接近或节点劣化，看 judge.log 的带宽差值
-  （判据是真实下载带宽，不是延迟——见 [跨国选优](country-selection.md)）；
+  裁决以「保持」为主，少量「切换」属正常；探测累计流量应稳定在 ~1.5GB/天量级（每轮测全部 16 个节点 × 1MB）
+- **异常处置**：频繁切换 = 两个节点**带宽**接近或节点劣化，看 judge.log 的带宽差值
+  （判据是真实下载带宽，不是延迟——见 [单池择优](pool-selection.md)）；
   裁决断档 = judge cron 没跑，查 init.d 的 cron 注册；
-  探测流量异常增长 = 轮转或样本量出了问题
+  guard.log 频繁报"当前节点不通" = 节点真在挂，或入口 IP 被整段阻断（见 README 排障）；
+  探测流量异常增长 = 样本量或测速次数出了问题
 
 ### 4. 流量与套餐
 - **取数**：`./scripts/traffic.sh`
@@ -61,6 +63,8 @@
 - **取数**：Mac 侧 `curl` 测四条路径——代理域（github.com、hf-mirror.com）、
   直连域（www.baidu.com、registry.npmmirror.com）
 - **判据**：全部 http=200；代理域解析到 fake-ip 段 `198.18.0.0/16`
+- **额外必测**：`https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg` 走 3MB Range，
+  应 > 1MB/s（该域名强制 DIRECT，走国内 CDN；2026-10-29 修规则前只有 0.1MB/s）
 - **例外**：只有**用路由器 DNS 的客户端**才拿到 fake-ip。客户端自己手工配了外部 DNS
   （如 Mac Wi-Fi 手工设 223.5.5.5/114.114.114.114）时解析到真实 IP，
   该机流量在 mihomo 里 `host` 为空 → 只命中 IP/GeoIP 类规则，域名规则对其失效。

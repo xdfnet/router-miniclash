@@ -78,6 +78,12 @@ gen_config() {
         echo "  default-nameserver:"
         echo "    - 223.5.5.5"
         echo "    - 119.29.29.29"
+        echo "  # DIRECT 命中的域名用国内 DNS 解析：默认跟随 nameserver（国外 DoH 经节点）"
+        echo "  # 会把 dl.google.com 解析到 142.251.x 境外 IP，直连必然超时（2026-10-29 实测）；"
+        echo "  # 国内 DNS 则给 120.253.x 中国移动 CDN 节点，直连 4.6MB/s"
+        echo "  direct-nameserver:"
+        echo "    - 223.5.5.5"
+        echo "    - 119.29.29.29"
         echo "  # 默认解析：全部域名经节点用国外 DoH 查询（不掉国内 DNS、防污染）"
         echo "  nameserver:"
         echo "    - https://1.1.1.1/dns-query#$group"
@@ -111,9 +117,12 @@ gen_config() {
         #   boost1.shop（机场自己的订阅服务器：部分出口节点到它被丢弃式封锁——2026-10-27 实测
         #     日本1/3/4/8 走代理 10s 无响应，8 个新加坡节点与直连都 200；直连 0.8s。
         #     拉订阅/查流量必须走直连，否则换到被封锁的节点就拉不到订阅）
+        #   dl.google.com（Chrome 全平台更新包 266MB。解析到中国移动 CDN（120.253.253.225），
+        #     2026-10-29 实测路由器直连 4.6MB/s vs 走代理 0.1MB/s——差 30 倍，走代理必然超时）
         # 注意：注入缩进必须与订阅规则条目一致（awk 动态对齐：旧订阅 4 空格、新订阅 2 空格；缩进不匹配会破坏 YAML）
         if [ -n "$group" ]; then
             EXTRA="    - DOMAIN-SUFFIX,boost1.shop,DIRECT
+    - DOMAIN-SUFFIX,dl.google.com,DIRECT
     - DOMAIN-SUFFIX,prss.microsoft.com,DIRECT
     - DOMAIN-SUFFIX,delivery.mp.microsoft.com,DIRECT
     - DOMAIN-SUFFIX,apple.com,$group
@@ -130,29 +139,16 @@ gen_config() {
         else
             EXTRA=""
         fi
-        # 自动优选 = select 主组 + 每个国家一个 url-test 组（judge 经 API 裁决国家，见 /usr/share/miniclash/judge.sh）
-        # 订阅节点名带国家前缀（日本1~8、新加坡1~8…），按 countries 归集；伪装信息条目不匹配任何前缀自动排除
+        # 自动优选 = 单池 select：成员直接是订阅的全部节点，judge 按真实带宽选具体节点并 PUT 进来
+        # （2026-10-29 决策，取代原先的「select 主组 + 每国 url-test 组」两层结构：
+        #   内核 url-test 按延迟选节点，与本项目的带宽判据冲突——实测它常选中组内带宽最差的节点
+        #   （2026-10-29：组内选中新加坡1，到 dl.google.com 只有 100KB/s，同批新加坡7 有 829KB/s）。
+        #   改为单池后切换与故障自愈全部自己管：judge 选节点，guard.sh 探活切换。见 docs/pool-selection.md）
         group=${group:-自动优选}
-        # 参与裁决的国家（有序，第 1 个为 select 默认；单一场景固化，节点按订阅名前缀归集）
-        countries=日本,新加坡
         all_names=$(awk '/^proxies:/{p=1;next}/^[a-z-]+:/{p=0}p' $SUBSCRIBE \
             | grep -oE "name: [^,}]+" | sed "s/name: //; s/^'//; s/'$//")
-        group_names=""
-        auto_lines=""
-        for c in $(echo "$countries" | tr ',' ' '); do
-            gname="${c}组"
-            group_names="$group_names,'$gname'"
-            qlist=$(for n in $all_names; do case "$n" in ("$c"*) printf "'%s'," "$n";; esac; done | sed 's/,$//')
-            # tolerance 200ms：2026-10-24 实测单次延迟采样跨度可达 546ms（同一节点 6 次
-            # 测出 345~891ms），而组内节点真值只差 34ms（332~366ms）——500 门槛连
-            # 「慢一倍的节点」都换不掉（领先 389ms < 500），200 才是有效门槛：
-            # 真慢节点（领先 389ms）能识别，±100ms 典型噪声带不动。
-            # expected-status 只认真实 204，防劫持假 200
-            auto_lines="$auto_lines
-    - { name: $gname, type: url-test, proxies: [$qlist], url: 'https://github.com/generate_204', interval: 60, tolerance: 200, expected-status: 200/204 }"
-        done
-        group_names=$(echo "$group_names" | sed 's/^,//')
-        auto_group="    - { name: $group, type: select, proxies: [$group_names] }$auto_lines"
+        node_list=$(for n in $all_names; do printf "'%s'," "$n"; done | sed 's/,$//')
+        auto_group="    - { name: $group, type: select, proxies: [$node_list] }"
         awk -v extra="$EXTRA" -v auto="$auto_group" '
             /^proxies:/{p=1}
             # 注入 TLS 指纹：flow 节点缺 fingerprint 统一补 firefox
@@ -259,9 +255,10 @@ dns_stop() {
     /etc/init.d/dnsmasq restart 2>/dev/null
 }
 
-# ---------- watchdog（上报当前节点） ----------
-# 主组"自动优选"是 select 组，成员是各国家 url-test 组，国家选择由 judge 裁决（见 /usr/share/miniclash/judge.sh）。
-# watchdog 只读当前实际节点（select → 国家组展开两层）落盘到 uci node，供查看，不驱动切换。
+# ---------- watchdog（故障自愈 + 上报当前节点） ----------
+# 主组"自动优选"是单池 select，成员就是各节点，now 直接是节点名（不再有两层展开）。
+# 单池后内核 url-test 不再兜底（它按延迟选、与带宽判据冲突）→ 故障切换自己管：
+#   guard.sh 每轮探活当前节点，不通就切到 judge 写的带宽排名里第一个活的节点。
 WATCHDOG_PID=/var/run/miniclash_watchdog.pid
 
 watchdog() {
@@ -269,17 +266,10 @@ watchdog() {
     local secret=$(api_secret) group=$(get group)
     while :; do
         sleep $interval
+        # 故障自愈：当前节点不通 → 切到排名里第一个活的（无排名文件时内部跳过）
+        /usr/share/miniclash/guard.sh 2>/dev/null
         local now=$(curl -s --max-time 3 -H "Authorization: Bearer $secret" \
             http://127.0.0.1:9090/proxies/$group | grep -oE '"now":"[^"]*"' | head -1 | cut -d'"' -f4)
-        # select 选中国家组时 now 是组名（日本组），展开一层取实际节点
-        if [ -n "$now" ]; then
-            local sub=$(curl -s --max-time 3 -H "Authorization: Bearer $secret" \
-                http://127.0.0.1:9090/proxies/$now | grep -oE '"now":"[^"]*"' | head -1 | cut -d'"' -f4)
-            # 国家组所有节点都死时 sub 等于 now（组名），无法展开；保留组名也比脏节点名好，仅在确为节点时采用
-            if [ -n "$sub" ] && [ "$sub" != "$now" ]; then
-                now="$sub"
-            fi
-        fi
         [ -n "$now" ] && [ "$now" != "$(get node)" ] && {
             uci set miniclash.core.node="$now" && uci commit miniclash
             log "自动优选当前 → $now"
@@ -338,7 +328,7 @@ start() {
         echo '* * * * * /usr/share/miniclash/meter.sh' >> /etc/crontabs/root
     /etc/init.d/cron restart 2>/dev/null
     log "已启动 (PID $(pidof mihomo))"
-    # 开机/重启即测一次，直接进当前最优国家（BOOT 模式测全部节点，阻塞约 30s）
+    # 开机/重启即测一次，直接进当前最优节点（BOOT 模式测全部节点，阻塞约 30s）
     BOOT=1 /usr/share/miniclash/judge.sh >/dev/null 2>&1
     return 0
 }
