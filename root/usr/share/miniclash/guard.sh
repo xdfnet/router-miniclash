@@ -21,7 +21,11 @@ RANK=/tmp/miniclash_rank
 LOG=$WORKDIR/guard.log
 GROUP=$(uci -q get miniclash.core.group 2>/dev/null); GROUP=${GROUP:-自动优选}
 ALIVE_URL='https://github.com/generate_204'
-ALIVE_TIMEOUT=5000      # 单节点探活超时（毫秒）
+ALIVE_TIMEOUT=10000     # 单节点探活超时（毫秒）
+# 2026-11-02 实测：节点握手延迟 0.6~3.5 秒，5 秒口径下 16 个节点有 2 个直接超时
+# （15 秒口径 1.96s / 2.22s 就通）；探活偏紧 → guard 每天误判 65~79 次、每 20~30 分钟
+# 切一次节点（每次切换都断连）。放宽到 10 秒后误判大幅下降，真挂节点仍由 watchdog
+# 每 60 秒一轮发现（多等 5 秒可接受）。
 MAX_CANDIDATES=5        # 最多试几个备选（每个最多等 ALIVE_TIMEOUT）
 
 [ -n "$SECRET" ] || exit 0

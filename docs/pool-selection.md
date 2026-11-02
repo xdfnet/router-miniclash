@@ -79,6 +79,9 @@
 - **探活**：mihomo 的 delay API —— 内核用指定节点发一次真实请求，通=活。
   与 probe 的测速 URL **刻意不同**（probe 打 raw.githubusercontent 的 1MB 正文，
   guard 打 generate_204）：probe 测带宽、guard 测活着，两者互不污染读数。
+  **超时 10 秒**（`ALIVE_TIMEOUT`）：2026-11-02 实测节点握手延迟 0.6~3.5 秒，
+  5 秒口径下 16 个节点有 2 个直接超时（15 秒口径 1.96s / 2.22s 就通）→ 偏紧会造成误判。
+  那时 guard 每天误判 **65~79 次**、每 20~30 分钟切一次节点（每次切换都断连）。
 - **切换**：当前节点不通 → 按 judge 写的排名文件（`/tmp/miniclash_rank`）从前往后找，
   找到第一个活的就 PUT 进去；最多试 5 个备选。
 - **谁来调**：init.d 的 watchdog 每 60 秒调一次（`check_interval`），judge 每轮开头也调一次兜底。
