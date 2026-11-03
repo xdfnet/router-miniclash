@@ -76,6 +76,7 @@
 | `sun-clan.com` | 国内服务 | — |
 | `ls.apple.com` | **地图瓦片与地理配置**（`gspe*-cn-ssl.ls.apple.com`）。Apple 在国内有 CDN 落点（阿里/移动 CDN），但被下面的 `apple.com` 兜底规则一起塞进代理节点 → macOS 地图与「查找」里的地图绕地球取瓦片 | 2026-10-29：Mac 侧实测 `gspe19-cn` 代理 2.5~3.4s → 直连 **0.12s**；`gspe19-2-cn` 代理 1.8~6.1s → 直连 **0.07s**；`gspe35-ssl` → 0.07s。改后 mihomo 连接表确认命中 `DIRECT` |
 | `apple-mapkit.com` | MapKit CDN（`cdn.apple-mapkit.com`），同上 | 2026-10-29：代理 0.43~0.85s → 直连 **0.08s** |
+| `uploads.github.com` | GitHub **release 二进制上传**的真正端点（`gh release upload` 把文件体 POST 到这里）。走代理时出口上行极窄 | 2026-11-03：经代理上传到 `api.github.com` 只有 **46.6KB/s**（日本1/2/3 三节点同速，2MB 传 45s 传不完），同一节点**下载** 999KB/s → 是出口上行窄、不是 GitHub 的问题；路由器直连真实 IP：`uploads.github.com` **810KB/s**、api 766KB/s、S3 523KB/s（快 10~17 倍）。改后真实上传实测：**5MB / 11.1s ≈ 472KB/s**（改前同量需 ~112s） |
 
 ### 强制走代理（订阅把国内可直连的兜成 DIRECT，但实际直连不通）
 

@@ -118,6 +118,12 @@ gen_config() {
         #   boost1.shop（机场自己的订阅服务器：部分出口节点到它被丢弃式封锁——2026-10-27 实测
         #     日本1/3/4/8 走代理 10s 无响应，8 个新加坡节点与直连都 200；直连 0.8s。
         #     拉订阅/查流量必须走直连，否则换到被封锁的节点就拉不到订阅）
+        #   uploads.github.com（GitHub release 二进制上传的真正端点，2026-11-03 实测：
+        #     走代理只有 46.6KB/s（日/新多节点同速，2MB 传 45s 传不完），
+        #     直连 810KB/s（10MB 从 3.5 分钟变 12 秒）；同一节点下载 999KB/s，
+        #     说明是出口上行窄、不是 GitHub 的问题。
+        #     注意 github.com 主站直连不通（git push 那条路仍只能走代理）、
+        #     objects.githubusercontent.com 直连也不通，所以只放行 uploads 这一个域）
         #   dl.google.com（Chrome 全平台更新包 266MB。解析到中国移动 CDN（120.253.253.225），
         #     2026-10-29 实测路由器直连 4.6MB/s vs 走代理 0.1MB/s——差 30 倍，走代理必然超时）
         #   ls.apple.com / apple-mapkit.com（地图瓦片与 MapKit CDN。Apple 在国内有 CDN 落点
@@ -131,6 +137,7 @@ gen_config() {
             EXTRA="    - DOMAIN-SUFFIX,ls.apple.com,DIRECT
     - DOMAIN-SUFFIX,apple-mapkit.com,DIRECT
     - DOMAIN-SUFFIX,boost1.shop,DIRECT
+    - DOMAIN-SUFFIX,uploads.github.com,DIRECT
     - DOMAIN-SUFFIX,dl.google.com,DIRECT
     - DOMAIN-SUFFIX,prss.microsoft.com,DIRECT
     - DOMAIN-SUFFIX,delivery.mp.microsoft.com,DIRECT
