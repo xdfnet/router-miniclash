@@ -69,7 +69,6 @@
 | `boost1.shop` | 机场自己的订阅服务器。部分出口节点到它被**丢弃式封锁**（连上不回数据），换到被封锁的节点就拉不到订阅、查不了流量 | 2026-10-27：日本1/3/4/8 走代理 10s 无响应；8 个新加坡节点与直连都 200；直连 0.8s |
 | `dl.google.com` | Chrome 全平台更新包 266MB。该域名解析到**中国移动 CDN**（120.253.x），国内直连极快；走代理是绕地球 | 2026-10-29：路由器直连 4.6MB/s vs 走代理 0.1MB/s（差 30 倍），走代理必超时 |
 | `vsassets.io` | VS Code 扩展资产 CDN，Akamai 国内节点（23.49.x / 23.200.x） | 2026-10-29：根路径直连 0.26s vs 代理 0.30~1.5s；同族 `marketplace.visualstudio.com` 真实 .vsix 包直连 575KB/s vs 代理 52KB/s（11 倍） |
-| `prss.microsoft.com` | VSCode 等下载 CDN，国内可直连 | 必须排在 `microsoft.com` 之前（后者走代理）。注意实测直连 438KB/s vs 代理 441KB/s——**这条目前零收益也无害**（瓶颈在 CDN 本身不在路由），留着是挡整族 microsoft.com 走代理 |
 | `delivery.mp.microsoft.com` | Edge 下载 CDN，国内联通节点 | 直连 0.18s vs 代理 0.40s |
 | `hf-mirror.com` | HuggingFace 镜像站，解析到东京 SAKURA，国内可直连 | — |
 | `xiaohongshu.com`（关键字 `xiaohongshu`） | 小红书，国内服务 | 注意：桌面端会连自己的本地服务 `localhost.redpass.xiaohongshu.com:10001-10011`，命中 DIRECT 后连 127.0.0.1 被拒 → 日志里每天上千条 `connection refused`，**是噪音不是故障** |
@@ -79,6 +78,10 @@
 | `uploads.github.com` | GitHub **release 二进制上传**的真正端点（`gh release upload` 把文件体 POST 到这里）。走代理时出口上行极窄 | 2026-11-03：经代理上传到 `api.github.com` 只有 **46.6KB/s**（日本1/2/3 三节点同速，2MB 传 45s 传不完），同一节点**下载** 999KB/s → 是出口上行窄、不是 GitHub 的问题；路由器直连真实 IP：`uploads.github.com` **810KB/s**、api 766KB/s、S3 523KB/s（快 10~17 倍）。改后真实上传实测：**5MB / 11.1s ≈ 472KB/s**（改前同量需 ~112s） |
 
 ### 强制走代理（订阅把国内可直连的兜成 DIRECT，但实际直连不通）
+
+| 域名 | 原因 | 实测 |
+|---|---|---|
+| `prss.microsoft.com` | VSCode 更新包下载 CDN。**曾误按"国内可直连"注入 DIRECT**，2026-11-13 用真实包推翻：更新包 `vscode.download.prss.microsoft.com/dbazure/download/stable/<commit>/VSCode-darwin-universal.zip` 有 **568MB**，直连（落点 118.253.198.2）只有 **258KB/s** → 37 分钟；走代理 **2.9~4.8MB/s** → 3 分钟，差 12 倍 | 2026-11-13：直连 258KB/s（两次一致）vs 代理 4.83MB/s（新加坡4）/1.62MB/s（日本1）。**教训：落点是国内 CDN ≠ 这条线路快**，微软分给我们的国内节点质量很差；"国内可直连"的判断必须用真实大文件量，不能只看落点归属 |
 
 | 域名 | 原因 |
 |---|---|
@@ -157,7 +160,7 @@
 |---|---|---|
 | `boost1.shop`（DIRECT） | 直连正常 | 保持 |
 | `dl.google.com`（DIRECT） | 直连正常 | 保持（Chrome 更新 13MB/s） |
-| `prss.microsoft.com`（DIRECT） | 直连正常 | 保持（当前零收益也无害，挡整族 microsoft.com） |
+| `prss.microsoft.com` | 直连 258KB/s vs 代理 4.83MB/s（568MB 真实更新包） | **2026-11-13 改为走代理**（原 DIRECT，见下面「强制走代理」表） |
 | `delivery.mp.microsoft.com`（DIRECT） | ⚠ 根路径直连 000 | **维持 DIRECT**：根路径 000 是 CDN 不给根路径；真实 Edge 包实测代理路径 404（根本下不到）、直连 1.37MB/s 正常 |
 | `apple.com`/`icloud.com`/`microsoft.com`/`microsoftonline.com`/`office.com`/`office365.com`/`live.com`/`officecdn`（PROXY） | ⚠ 部分报"直连快 1.6~1.7 倍" | **维持代理**：根路径（302/403/400）不是真实业务路径，1.6 倍又贴着门槛（实测噪声本身就能到 1.5~1.7 倍）；微软系直连不通是当初加规则的原因 |
 | `hf-mirror.com`/`xiaohongshu`/`sun-clan.com`（DIRECT） | 直连正常 | 保持 |
@@ -204,6 +207,7 @@
 > 这些结论不是一次性的：`scripts/domain-candidates.sh`（巡检第 9 项）每次巡检都会重跑，
 > 新域名会自己冒出来。本节记录的是已处理过的，脚本会跳过已判定"必须代理"的那些。
 
-> 另测：`prss.microsoft.com`（已注入 DIRECT）实测直连 438KB/s vs 代理 441KB/s——
-> 瓶颈在 CDN 本身而非路由，**这条规则目前零收益也无害**。留着不删（它挡的是"整族 microsoft.com
-> 走代理"的大网段，撤了反而可能被兜进代理）。
+> 另测（2026-10-29）：`prss.microsoft.com` 实测直连 438KB/s vs 代理 441KB/s，当时判为"零收益也无害"，
+> 留在 DIRECT。**该结论已被 2026-11-13 的真实 568MB 更新包实测推翻**（直连 258KB/s vs 代理 4.83MB/s），
+> 已改为走代理——见第一节「强制走代理」表。
+> 教训：CDN 类域名的结论会随"量的文件不同"而翻转，小样本（根路径/小文件）测出的"差不多"不能当结论。

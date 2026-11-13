@@ -113,7 +113,11 @@ gen_config() {
         #   微软全家（Microsoft 账号/OneDrive/Office 登录与更新）
         # 反向：国内可直连却被 GEOIP 或上面的注入兜进代理的，强制 DIRECT：
         #   hf-mirror.com（东京 SAKURA）、xiaohongshu.com（小红书）、sun-clan.com、
-        #   prss.microsoft.com（VSCode 等下载 CDN，国内可直连，须排在 microsoft.com 之前）
+        #   prss.microsoft.com（曾按"VSCode 下载 CDN 国内可直连"注入 DIRECT——2026-11-13 实测推翻：
+        #     VSCode 的更新包 vscode.download.prss.microsoft.com/dbazure/download/stable/<commit>/
+        #     VSCode-darwin-universal.zip 有 568MB，直连（落点 118.253.198.2）只有 258KB/s
+        #     → 568MB 要 37 分钟；走代理实测 2.9~3.3MB/s → 3 分钟。差 12 倍，故改走代理。
+        #     注意落点虽是国内 CDN，微软分给我们的这条线路质量很差，别再被"国内落点=能直连"误导）
         #   delivery.mp.microsoft.com（Edge 下载 CDN，国内联通节点，实测直连 0.18s vs 代理 0.40s）
         #   boost1.shop（机场自己的订阅服务器：部分出口节点到它被丢弃式封锁——2026-10-27 实测
         #     日本1/3/4/8 走代理 10s 无响应，8 个新加坡节点与直连都 200；直连 0.8s。
@@ -139,7 +143,7 @@ gen_config() {
     - DOMAIN-SUFFIX,boost1.shop,DIRECT
     - DOMAIN-SUFFIX,uploads.github.com,DIRECT
     - DOMAIN-SUFFIX,dl.google.com,DIRECT
-    - DOMAIN-SUFFIX,prss.microsoft.com,DIRECT
+    - DOMAIN-SUFFIX,prss.microsoft.com,$group
     - DOMAIN-SUFFIX,delivery.mp.microsoft.com,DIRECT
     - DOMAIN-SUFFIX,apple.com,$group
     - DOMAIN-SUFFIX,icloud.com,$group
