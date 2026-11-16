@@ -73,6 +73,7 @@ config core 'core'
 | 现象 | 处理 |
 |---|---|
 | 海外全不通，日志 `context deadline exceeded` | iptables 本机出站被劫持成自环 → 重跑 `./scripts/install.sh` |
+| 网页能打开但**内容加载不出来**（图片/正文空、请求 5 秒整挂） | ① 内核建连超时默认 5s，把"慢但通"的线路掐了（curl 固定在 5.00s 返回 000）→ 配置已提 `connect-timeout: 15000`；② guard 把活节点当死的、**每分钟切一次节点**，每次切换断连 → 查 `tail /etc/miniclash/guard.log` 是不是在刷「查找备选」。两条都已修（2026-11-16），改配置后要 `/etc/init.d/miniclash restart` 生效 |
 | 海外域名解析成假 IP、fake-ip 不生效 | dnsmasq 需 `restart`（`reload` 不重读 `/tmp/dnsmasq.d/`） |
 | 重启后内核 / 订阅消失 | F2FS 吞文件 → 内核重跑 install.sh；订阅重跑 update-subscribe.sh |
 | 启动失败，日志 `MMDB invalid` | GeoIP 被 F2FS 写坏 → 启动前 `mihomo -t` 已拦截并自动从备份恢复；备份也坏才重跑 install.sh |

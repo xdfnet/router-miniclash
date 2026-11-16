@@ -64,6 +64,11 @@ gen_config() {
         echo "mode: rule"
         echo "log-level: warning"
         echo "ipv6: false"
+        # 建连超时 15s（mihomo 默认 5s 太紧，会把"慢但通"的线路判死）
+        # 2026-11-16 实测：X(Cloudflare) 到部分节点要 6~10s 才建连，5s 口径下内核直接掐断
+        # → 浏览器表现为"内容加载不出来"（curl 固定在 5.00s 返回 000）。
+        # 同一批节点把 connect-timeout 提到 15s 后 x.com 全部 200。
+        echo "connect-timeout: 15000"
         echo "external-controller: 0.0.0.0:9090"
         echo "secret: $secret"
         echo "dns:"

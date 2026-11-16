@@ -167,7 +167,7 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 | 组件 | 频率 | 干什么 |
 |---|---|---|
 | `judge.sh` | cron 每 15 分钟 | 实测每个节点的**真实下载带宽**（probe.sh 经 config.yaml `listeners` 段的钉死端口串行下 1MB），按带宽排名选具体节点 `PUT` 进主组。常规门槛"连续 2 轮 + 领先 25%"；当前节点劣化到最优的 1/3 以下时单轮即切 |
-| `guard.sh` | watchdog 每 60 秒（judge 每轮开头也兜底一次） | 用 mihomo delay API 探活当前节点，不通就按 `/tmp/miniclash_rank` 从前往后找第一个活的切过去 |
+| `guard.sh` | watchdog 每 60 秒（judge 每轮开头也兜底一次） | 用 mihomo delay API 探活当前节点：**两个探活 URL 都失败**且**连续两轮**失败才判不通，然后按 `/tmp/miniclash_rank` 从前往后找第一个活的切过去 |
 | `init.d` watchdog | 每 60 秒 | 调 guard.sh 自愈 + 把当前节点名落盘到 UCI `node` |
 
 内核只负责按规则转发。**机制的判据、测速底座、防抖、流量预算与实测依据，全部见
@@ -207,4 +207,6 @@ watchdog 每 `check_interval` 秒做两件事：先调 `guard.sh` 做故障自�
 | 无指纹节点注入 `client-fingerprint: firefox` | 默认指纹 ClientHello 超 MSS，路由器 GSO 合并大包被中间设备丢前段 → 握手超时（2026-09-01 拨号全灭根因）；firefox 指纹包小单段不分片 |
 | 关闭 WAN GSO/TSO | 隧道内 TLS record 超 MSS 被网卡合并大包、中间设备丢前段，配合指纹注入根治大数据传输间歇失败 |
 | watchdog 调 guard.sh 自愈 + 上报 | 单池后内核不再兜底，故障切换必须自己做（60s 粒度，实测 2 秒内切走） |
+| `connect-timeout: 15000`（内核建连超时） | mihomo 默认 5s 太紧，会把"慢但通"的线路判死：2026-11-16 实测 X(Cloudflare) 到部分节点要 6~10s 才建连，5s 口径下内核直接掐断 → 浏览器表现为"内容加载不出来"（curl 固定 5.00s 返回 000）；提到 15s 后同一批节点 x.com 全部 200 |
+| guard 探活用两个 URL + 连续两轮确认 | 单 URL 采样噪声大（同一批 16 节点，github 超时 4 个、gstatic 超时 5 个，**失败的还不是同一批**）→ guard 把活节点当死的，2026-11-16 一天切了 606 次，每次断连 |
 | 开机 wait_wan + 启动前确保 MMDB 在位 | 2026-09-25 冷启动时 WAN/MMDB 未就绪，mihomo 运行时联网下 MMDB 失败反复 fatal（折腾 15 分钟）；先就绪再拉起，一次成功 |

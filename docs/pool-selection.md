@@ -78,12 +78,23 @@
 
 - **探活**：mihomo 的 delay API —— 内核用指定节点发一次真实请求，通=活。
   与 probe 的测速 URL **刻意不同**（probe 打 raw.githubusercontent 的 1MB 正文，
-  guard 打 generate_204）：probe 测带宽、guard 测活着，两者互不污染读数。
-  **超时 10 秒**（`ALIVE_TIMEOUT`）：2026-11-02 实测节点握手延迟 0.6~3.5 秒，
+  guard 打 generate_204 一类的小探活页）：probe 测带宽、guard 测活着，两者互不污染读数。
+  **超时 15 秒**（`ALIVE_TIMEOUT`）：2026-11-02 实测节点握手延迟 0.6~3.5 秒，
   5 秒口径下 16 个节点有 2 个直接超时（15 秒口径 1.96s / 2.22s 就通）→ 偏紧会造成误判。
   那时 guard 每天误判 **65~79 次**、每 20~30 分钟切一次节点（每次切换都断连）。
-- **切换**：当前节点不通 → 按 judge 写的排名文件（`/tmp/miniclash_rank`）从前往后找，
-  找到第一个活的就 PUT 进去；最多试 5 个备选。
+  **2026-11-16 改用两个探活 URL**（`www.gstatic.com/generate_204` +
+  `http://cp.cloudflare.com/generate_204`，**两个都失败才算不通**）：
+  原来那个 `github.com/generate_204` 已不保证回 204，10 秒口径 16 个节点超时 4 个；
+  更要命的是**单 URL 采样噪声大**——同一批节点同一时刻，github 超时 4 个、gstatic 超时 5 个，
+  **失败的还不是同一批**（日本3 只挂 gstatic、日本7 只挂 github）。
+  单 URL 判死 = guard 把活节点当死的 → 2026-11-16 当天记了 **606 条**日志、
+  **几乎每分钟切一次节点**，每次切换都断连（表现就是"网页内容加载不出来"）。
+  两 URL 口径下同一批数据误判 0 个。
+- **确认轮数**：连续 **2 轮**（`CONFIRM_ROUNDS`）探活都失败，才判定当前节点不通并切换。
+  单轮失败只是线路抖动，记在 `/tmp/miniclash_guard_fail`（`<失败轮数> <节点名>`），
+  下一轮还活着就把计数清零。
+- **切换**：当前节点确认不通 → 按 judge 写的排名文件（`/tmp/miniclash_rank`）从前往后找，
+  找到第一个活的就 PUT 进去；最多试 3 个备选。
 - **谁来调**：init.d 的 watchdog 每 60 秒调一次（`check_interval`），judge 每轮开头也调一次兜底。
 
 > 注意：`alive` 字段只在内核有 url-test 组时才维护。没有 url-test 组之后，
