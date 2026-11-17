@@ -45,7 +45,7 @@ config core 'core'
 | 干预候选分析 | `./scripts/domain-candidates.sh [候选数] [天数]`（兜底代理域名逐个对比直连/代理，判据见 [docs/domain-rules.md](docs/domain-rules.md)） |
 | 干预复核 | `./scripts/domain-review.sh [天数]`（已加的规则还有没有存在价值：失效了/没收益了就该撤） |
 | 巡检（一键取数） | `./scripts/inspect.sh`（10 项巡检取数，判据与汇报格式见 [docs/inspection.md](docs/inspection.md)） |
-| 看裁决历史 | `ssh luyou "tail /etc/miniclash/judge.log"`（每 15 分钟一行） |
+| 看裁决历史 | `ssh luyou "tail /etc/miniclash/judge.log"`（每 30 分钟一行） |
 | 内核 / GeoIP 更新 | `./scripts/update-kernel.sh [--deploy]` |
 | 日志智能分诊 | `./scripts/diagnose.sh`（TypeSafe Jev，需 `TYPESAFE_API_KEY` 与 jq） |
 | 彻底卸载 | `./scripts/uninstall.sh` |
@@ -56,7 +56,7 @@ config core 'core'
 
 **一个池子，谁好谁上**（2026-10-29 起）：主组「自动优选」是 select，成员就是全部 16 个节点。
 
-- **judge.sh**（cron 每 15 分钟）：实测每个节点的**真实下载带宽**（每个节点一个钉死的本地端口，下载 1MB 真内容），
+- **judge.sh**（cron 每 30 分钟）：实测每个节点的**真实下载带宽**（每个节点一个钉死的本地端口，下载 1MB 真内容），
   按带宽排名选第一名 PUT 进去。判据是带宽不是延迟——延迟与带宽并不同向，且单次延迟采样噪声可达 2 倍。
 - **guard.sh**（watchdog 每 60 秒调一次）：探活当前节点，不通就切到排名里第一个活的（约 2 秒）。
 - 内核只负责按规则转发，不参与选择。
@@ -78,7 +78,7 @@ config core 'core'
 | 重启后内核 / 订阅消失 | F2FS 吞文件 → 内核重跑 install.sh；订阅重跑 update-subscribe.sh |
 | 启动失败，日志 `MMDB invalid` | GeoIP 被 F2FS 写坏 → 启动前 `mihomo -t` 已拦截并自动从备份恢复；备份也坏才重跑 install.sh |
 | 某线路到个别站点不通（如日本 → gstatic） | 换**线路**（新加坡/日本），同线路换节点无效（共用一个出口） |
-| 节点劣化（当前出口慢 / 某个节点全 EOF） | judge 下一轮（≤15 分钟）自动换节点；急用手动切：
+| 节点劣化（当前出口慢 / 某个节点全 EOF） | judge 下一轮（≤30 分钟）自动换节点；急用手动切：
 `ssh luyou "curl -X PUT -H 'Authorization: Bearer \$(cat /etc/miniclash/api_secret)' -H 'Content-Type: application/json' -d '{\"name\":\"新加坡7\"}' http://127.0.0.1:9090/proxies/自动优选"` |
 | 全部节点都不通（judge 报「无可用节点」），过几分钟自己恢复 | BoostNet 全部节点共用**单一入口 IP**（旧台湾 HiNet），会有 5~15 分钟短窗口的全端口 TCP 阻断并自愈。**窗口 <30 分钟不必操作，>30 分钟才判真封锁**。BusyBox `nc` 探 anytls 端口会被服务端立刻关闭（假阴性），真相源用 judge 探针 + `netstat -tnp \| grep mihomo` 看 ESTABLISHED + Mac 实测。**加节点防不住入口级阻断**，加固方向是加入口 IP / 备机场 |
 | iPhone / Apple 推送不通 | 订阅 `apple.com,DIRECT` 兜成直连而本网络连不上 Apple → init.d 已自动注入 `push.apple.com → 自动优选`，重启生效 |

@@ -11,7 +11,7 @@
   │ UCI 配置 → init.d start()                            │
   │   ├─ gen_config()   头部 + 组生成 + 规则注入          │
   │   ├─ start_watchdog() 每 60s 调 guard.sh 自愈 + 上报节点│
-  │   ├─ judge.sh cron  每 15min 带宽测速打分 → 选具体节点 │
+  │   ├─ judge.sh cron  每 30min 带宽测速打分 → 选具体节点 │
   │   └─ ipt_start / dns_start  建立劫持与 DNS          │
   └──────────────┬──────────────────────┬──────────────┘
                  │ REST API (9090)      │ 写配置文件
@@ -46,7 +46,7 @@ root/etc/miniclash/cn.mrs      GeoSite 国内域名集【不入库，update-kern
 root/usr/bin/mihomo            内核二进制【不入库，update-kernel.sh 下载】
                                来源 mihomo/releases/download/<ver>/mihomo-<platform>-<ver>.gz
                                （两文件本地放此处，install.sh 缺失自动补齐；损坏自动重灌）
-root/usr/share/miniclash/judge.sh 节点择优（cron 每 15 分钟，带宽判据 + 双确认防抖）
+root/usr/share/miniclash/judge.sh 节点择优（cron 每 30 分钟，带宽判据 + 双确认防抖）
 root/usr/share/miniclash/guard.sh 故障自愈（watchdog 每 60s 调：当前节点不通就切备用）
 root/usr/share/miniclash/probe.sh 节点带宽实测底座（judge 调用；串行 1MB 下载）
 root/usr/share/miniclash/meter.sh 流量字节计量（cron 每分钟，采样连接 API 算字节增量）
@@ -96,7 +96,7 @@ start()
  7. start_watchdog —— 后台循环（调 guard.sh 探活自愈 + 当前节点落盘 uci node）
  8. ipt_start + dns_start —— 建立透明代理劫持与 DNS 联动
  9. 关闭 WAN GSO/TSO —— 隧道内 TLS record 超 MSS 被网卡合并大包、中间设备丢前段（配合指纹注入）
-10. 幂等安装 cron —— judge 每 15 分钟择优；meter 每分钟字节计量
+10. 幂等安装 cron —— judge 每 30 分钟择优；meter 每分钟字节计量
 11. BOOT=1 前台跑一次 judge —— 实测带宽直接进当前最优节点（开机直选，绕过双确认；16 节点串行测速约 5 分钟）
 ```
 
@@ -166,7 +166,7 @@ PREROUTING TCP → MINICLASH 链 → 排除内网段/组播 → 放行 fnos → 
 
 | 组件 | 频率 | 干什么 |
 |---|---|---|
-| `judge.sh` | cron 每 15 分钟 | 实测每个节点的**真实下载带宽**（probe.sh 经 config.yaml `listeners` 段的钉死端口串行下 1MB），按带宽排名选具体节点 `PUT` 进主组。常规门槛"连续 2 轮 + 领先 25%"；当前节点劣化到最优的 1/3 以下时单轮即切 |
+| `judge.sh` | cron 每 30 分钟 | 实测每个节点的**真实下载带宽**（probe.sh 经 config.yaml `listeners` 段的钉死端口串行下 1MB），按带宽排名选具体节点 `PUT` 进主组。常规门槛"连续 2 轮 + 领先 25%"；当前节点劣化到最优的 1/3 以下时单轮即切 |
 | `guard.sh` | watchdog 每 60 秒（judge 每轮开头也兜底一次） | 用 mihomo delay API 探活当前节点：**两个探活 URL 都失败**且**连续两轮**失败才判不通，然后按 `/tmp/miniclash_rank` 从前往后找第一个活的切过去 |
 | `init.d` watchdog | 每 60 秒 | 调 guard.sh 自愈 + 把当前节点名落盘到 UCI `node` |
 
